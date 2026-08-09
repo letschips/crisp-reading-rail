@@ -187,6 +187,7 @@ describe("ReadingRailAudio", () => {
     });
 
     audio.tick(0, testWindow);
+    expect(environment.createContext.mock.calls[0]?.[0]).toBe(testWindow);
     expect(fixture.oscillators[0].frequency.setValueAtTime)
       .toHaveBeenCalledWith(523.25, 2);
 

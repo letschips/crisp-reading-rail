@@ -2,6 +2,11 @@
 
 Crisp Reading Rail adds a compact reading-progress and heading-navigation rail to the right edge of each eligible Obsidian Markdown Reading view. Its proportional heading marks, orb-centered focus line, animated wave, and optional orbs sit alongside the visual language of Crisp File Explorer without occupying Obsidian's native right sidebar.
 
+## v0.3.31 behavior
+
+- 修复音阶音效在独立窗口中没有使用该窗口 AudioContext、导致拖动刻度时静音的问题。
+- Crisp 系列授权产品名单补齐 Crisp Organize 与 Crisp Base，并更新开发依赖与版本信息。
+
 ## v0.3.27 behavior
 
 - `Cycle orb style` 命令现在与设置页一致校验许可证：未激活用户无法通过命令面板切换到付费小球（原命令绕过设置页的许可证闸门）。

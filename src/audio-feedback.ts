@@ -107,7 +107,7 @@ export class ReadingRailAudio implements RailSoundProvider {
         duration: 0.038,
         release: 0.032,
         volume: 0.024,
-      });
+      }, window);
       return;
     }
     this.play(this.getTickTone(style), window);
