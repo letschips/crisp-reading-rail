@@ -2,6 +2,15 @@
 
 Crisp Reading Rail adds a compact reading-progress and heading-navigation rail to the right edge of each eligible Obsidian Markdown Reading view. Its proportional heading marks, orb-centered focus line, animated wave, and optional orbs sit alongside the visual language of Crisp File Explorer without occupying Obsidian's native right sidebar.
 
+## v0.4.0 Reading Memory & Outline Control
+
+- 在本地保存最近 500 篇笔记的上次阅读位置，并在每次打开的阅读会话中显示一个固定菱形标记；点击标记或运行 `Jump to last reading position` 即可返回。
+- 新建阅读标记时同时记录所在标题的文字、层级和源码行。标题位置变化后优先重新锚定到同一语义标题，找不到可靠匹配时才回退到原百分比。
+- 旧版纯数字标记会在读取时无损兼容，不需要手动迁移 `data.json`。
+- 设置中可选择只索引 H2、H2–H3 或 H2–H4，也可只展开当前 H2 分支；全文标题刻度仍然保留。
+- 每篇笔记可通过 frontmatter 独立关闭轨道、覆盖标题层级或切换当前 H2 分支模式。
+- 聚焦轨道后按 `P` 固定/释放大纲，`Escape` 释放并收起，`J`/`K` 静音跳到下一个/上一个标题；也可运行 `Toggle pinned outline`。
+
 ## v0.3.32 Reliability & Trust
 
 - 授权设置现在明确说明本地 Ed25519 验签、在线设备数量校验、离线回退，以及在线请求所包含的数据。
@@ -92,10 +101,27 @@ Focus the rail's single reading-position slider, then use:
 - Page Up and Page Down to move by 10%.
 - Home and End to move to the beginning or end.
 - M to save a waypoint at the current reading position.
+- P to pin or unpin the expanded outline.
+- J and K to move to the next or previous heading immediately and silently.
+- Escape to unpin and collapse the outline.
 - Tab to reach visible native heading buttons.
 - Delete or Backspace to remove a focused waypoint.
 
 Keyboard handling is local to the focused rail. The plugin does not register default hotkeys, intercept Obsidian shortcuts globally, or play navigation sounds for slider key presses. Reduced-motion preferences replace smooth navigation with immediate movement.
+
+## Per-note outline control
+
+Global defaults live in **Settings → Crisp Reading Rail → 大纲与阅读轨道交互**. A note can override them in frontmatter:
+
+```yaml
+---
+crisp-reading-rail: false       # disable the rail for this note
+crisp-reading-rail-levels: 3    # 2, 3, or 4
+crisp-reading-rail-scope: current-h2  # all or current-h2
+---
+```
+
+These keys are read-only preferences: the plugin never writes them into a note.
 
 ## Local installation
 
@@ -117,7 +143,7 @@ The deployment command copies `main.js`, `manifest.json`, `styles.css`, and the 
 
 ## Privacy and safety
 
-Crisp Reading Rail does not collect telemetry, edit notes, change files, or alter the workspace layout. It reads only the metadata and rendered headings for currently open Markdown Reading panes.
+Crisp Reading Rail does not collect telemetry, edit notes, change files, or alter the workspace layout. It reads only the metadata and rendered headings for currently open Markdown Reading panes. Reading memory and semantic waypoints stay in the plugin's local `data.json`; reading-memory history is capped at the 500 most recently updated notes.
 
 License validation first verifies the Ed25519 signature locally. When a license is present, activation and premium-feature checks send the license code, an Obsidian device/vault identifier, and the target plugin ID to the Crisp license service to enforce the device limit. Successful or failed results are cached in memory for 15 minutes to avoid repeated requests in the same session. If the service is unreachable, a locally valid signature remains usable through the documented offline fallback.
 

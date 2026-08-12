@@ -1,5 +1,35 @@
 # Crisp Reading Rail verification
 
+## v0.4.0 Reading Memory & Outline Control
+
+Verified on 2026-08-12 in the isolated release worktree.
+
+### Added
+
+- Debounced per-note reading memory with a fixed session resume marker and active-pane command.
+- Semantic waypoint records with source-line/text re-anchoring and legacy numeric migration.
+- Global H2/H3/H4 depth and all/current-H2 scope preferences plus three frontmatter overrides.
+- Pane-local pinned outline with P, Escape, J, K and an active-pane command.
+- Rename/delete handling and 500-note pruning for both waypoints and reading memory.
+
+### Automated gate
+
+- Pure data, controller, view, registry, settings, keyboard, DOM-stability, and motion regressions are included in the full suite.
+- `npm run check` passed with 18 test files and 142 tests, followed by ESLint, TypeScript, the production esbuild bundle, `node --check main.js`, version consistency, and `git diff --check`.
+- `npm audit --omit=dev` reported 0 vulnerabilities.
+
+### Deployment and live Obsidian acceptance
+
+- The repository deploy script copied only runtime files and owned assets to ALL and YS. Both pre-existing `data.json` files were byte-preserved by deployment; each vault retained its independent orb, sound, license, and waypoint state.
+- Source, ALL, and YS runtime hashes match: `main.js` `fabc04094d5626faa3bb63eecf2f8ce896d4fa2a5e8bcfcdd20a0dc8f28f78be`; `manifest.json` `595e45cbb7614dfbd5811f0f904c19f01a3da648034719639f7f69fc6c67608c`; `styles.css` `0bfa81313ecd8ad8ae8277722c1a6f06090fa0bce5303c7dcac4bbe3fd664ac5`. Asset inventories and bytes also match.
+- ALL and YS reloaded `0.4.0`; both reported `No errors captured.`. Live DOM checks verified one pane-local resume marker, P pinning, Escape unpin/collapse, current-H2 label filtering while retaining all heading ticks, semantic waypoint re-anchoring, and a fixed resume position while progress changed.
+- ALL's normal post-reload reading activity created its first local reading-memory entry, confirming debounced persistence. YS's two legacy numeric-waypoint notes normalized in memory to semantic `{ progress }` records without editing Markdown.
+
+### Motion review
+
+- New pinning reuses the existing opacity/transform expansion; no layout-property transition or new continuous animation was added.
+- Current-H2 filtering and the resume marker are state changes without decorative motion. Existing reduced-motion behavior continues to govern spring navigation and celebration.
+
 ## v0.3.32 Reliability & Trust
 
 Verified on 2026-08-12 in the isolated release worktree.

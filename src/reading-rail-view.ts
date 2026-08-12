@@ -19,8 +19,13 @@ import {
   resolveVariableLabelPositions,
 } from "./outline-model";
 import { clamp01, progressFromPointer } from "./progress";
+import {
+  createSemanticMarker,
+  resolveReadingMarkerProgress,
+} from "./reading-memory";
 import { normalizeWaypoints } from "./settings";
-import type { OutlineEntry } from "./types";
+import type { OutlineEntry, ReadingWaypoint } from "./types";
+import type { OutlineScope } from "./outline-preferences";
 
 const PROXIMITY_DISTANCE = 96;
 const COLLAPSE_DELAY = 3000;
@@ -67,7 +72,8 @@ export interface RailViewCallbacks {
   onProgressDrag?(progress: number): void;
   onProgressDragEnd?(progress: number): void;
   onProgressDragCancel?(progress: number): void;
-  onWaypointsChange?(waypoints: readonly number[]): void;
+  onWaypointsChange?(waypoints: readonly ReadingWaypoint[]): void;
+  onHeadingStep?(delta: number): void;
 }
 
 export interface RailAppearanceProvider {
@@ -104,6 +110,7 @@ export class ReadingRailView {
   private readonly headingTicksContainer: HTMLElement;
   private readonly active: HTMLElement;
   private readonly waypointsContainer: HTMLElement;
+  private readonly resumeMarker: HTMLButtonElement;
   private readonly orb: HTMLElement;
   private readonly progressLabel: HTMLElement;
   private readonly labelsContainer: HTMLElement;
@@ -121,9 +128,14 @@ export class ReadingRailView {
   private headingTickWaveActiveIndices = new Set<number>();
   private labels: HTMLButtonElement[] = [];
   private waypointButtons: HTMLButtonElement[] = [];
-  private waypoints: number[] = [];
+  private waypoints: ReadingWaypoint[] = [];
+  private lastWaypointRenderKey = "";
+  private resumeProgress: number | null = null;
   private entries: OutlineEntry[] = [];
   private activeHeadingIndex = -1;
+  private outlineScope: OutlineScope = "all";
+  private lastLabelBranchKey = "";
+  private pinned = false;
   private lastReadTickIndex = Number.MIN_SAFE_INTEGER;
   private lastProgressText = "";
   private lastProgressPercentage = -1;
@@ -213,6 +225,20 @@ export class ReadingRailView {
     this.waypointsContainer = document.createElement("div");
     this.waypointsContainer.className = "crisp-reading-rail__waypoints";
 
+    this.resumeMarker = document.createElement("button");
+    this.resumeMarker.type = "button";
+    this.resumeMarker.className = "crisp-reading-rail__resume-marker";
+    this.resumeMarker.textContent = "◆";
+    this.resumeMarker.hidden = true;
+    this.resumeMarker.title = "Jump to the last reading position";
+    this.resumeMarker.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (this.resumeProgress !== null) {
+        this.callbacks.onProgressSelect(this.resumeProgress, false, false);
+      }
+    });
+    this.waypointsContainer.append(this.resumeMarker);
+
     this.orb = document.createElement("div");
     this.orb.className = "crisp-reading-rail__orb";
     this.orb.setAttribute("aria-hidden", "true");
@@ -278,6 +304,7 @@ export class ReadingRailView {
           tick.style.setProperty("--crisp-reading-heading-progress", progress);
         }
       });
+      this.updateLabelBranch();
       this.measureLayout();
       this.updateReadTicks();
       this.renderPosition();
@@ -335,10 +362,24 @@ export class ReadingRailView {
     });
     this.labelsContainer.replaceChildren(...this.labels);
     this.activeHeadingIndex = -1;
+    this.lastLabelBranchKey = "";
     this.lastReadTickIndex = Number.MIN_SAFE_INTEGER;
+    this.updateLabelBranch();
     this.measureLayout();
+    this.renderWaypoints();
     this.updateReadTicks();
     this.renderPosition();
+  }
+
+  setOutlineScope(scope: OutlineScope): void {
+    if (scope === this.outlineScope) {
+      return;
+    }
+    this.outlineScope = scope;
+    this.root.classList.toggle("is-current-h2", scope === "currentH2");
+    if (this.updateLabelBranch()) {
+      this.measureLayout();
+    }
   }
 
   setProgress(progress: number): void {
@@ -357,16 +398,39 @@ export class ReadingRailView {
     this.scheduleAnimation();
   }
 
-  setWaypoints(waypoints: readonly number[]): void {
+  setWaypoints(waypoints: readonly (ReadingWaypoint | number)[]): void {
     const next = normalizeWaypoints(waypoints);
     if (
       next.length === this.waypoints.length
-      && next.every((value, index) => value === this.waypoints[index])
+      && next.every((value, index) => (
+        JSON.stringify(value) === JSON.stringify(this.waypoints[index])
+      ))
     ) {
       return;
     }
     this.waypoints = next;
     this.renderWaypoints();
+  }
+
+  setResumeMarker(progress: number | null): void {
+    const next = progress === null ? null : clamp01(progress);
+    if (next === this.resumeProgress) {
+      return;
+    }
+    this.resumeProgress = next;
+    this.resumeMarker.hidden = next === null;
+    if (next === null) {
+      this.resumeMarker.removeAttribute("data-progress");
+      this.resumeMarker.style.removeProperty("--crisp-reading-resume-progress");
+      this.resumeMarker.removeAttribute("aria-label");
+      return;
+    }
+    this.resumeMarker.dataset.progress = next.toString();
+    this.resumeMarker.style.setProperty("--crisp-reading-resume-progress", next.toString());
+    this.resumeMarker.setAttribute(
+      "aria-label",
+      `Last reading position at ${Math.round(next * 100)} percent`,
+    );
   }
 
   setActiveHeading(index: number): void {
@@ -380,6 +444,9 @@ export class ReadingRailView {
     this.labels[nextIndex]?.setAttribute("aria-current", "location");
     this.headingTicks[nextIndex]?.classList.add("is-active");
     this.activeHeadingIndex = nextIndex;
+    if (this.updateLabelBranch()) {
+      this.measureLayout();
+    }
     if (this.labelListDense && nextIndex >= 0) {
       const label = this.labels[nextIndex];
       if (label) {
@@ -393,6 +460,20 @@ export class ReadingRailView {
       this.cancelCollapse();
     }
     this.root.classList.toggle("is-expanded", expanded);
+  }
+
+  togglePinned(): boolean {
+    this.setPinned(!this.pinned);
+    return this.pinned;
+  }
+
+  private setPinned(pinned: boolean): void {
+    this.pinned = pinned;
+    this.root.classList.toggle("is-pinned", pinned);
+    this.root.setAttribute("data-pinned", pinned ? "true" : "false");
+    if (pinned) {
+      this.expandNow();
+    }
   }
 
   setVisible(visible: boolean): void {
@@ -475,6 +556,7 @@ export class ReadingRailView {
     this.labels = [];
     this.waypointButtons = [];
     this.waypoints = [];
+    this.lastWaypointRenderKey = "";
     this.entries = [];
   }
 
@@ -781,7 +863,11 @@ export class ReadingRailView {
   }
 
   private scheduleCollapse(): void {
-    if (!this.root.classList.contains("is-expanded") || this.collapseTimer !== null) {
+    if (
+      this.pinned
+      || !this.root.classList.contains("is-expanded")
+      || this.collapseTimer !== null
+    ) {
       return;
     }
     this.collapseTimer = this.window.setTimeout(() => {
@@ -954,7 +1040,24 @@ export class ReadingRailView {
       return;
     }
 
-    if (event.key.toLowerCase() === "m") {
+    const key = event.key.toLowerCase();
+    if (key === "p") {
+      event.preventDefault();
+      this.togglePinned();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      this.setPinned(false);
+      this.setExpanded(false);
+      return;
+    }
+    if (key === "j" || key === "k") {
+      event.preventDefault();
+      this.callbacks.onHeadingStep?.(key === "j" ? 1 : -1);
+      return;
+    }
+    if (key === "m") {
       event.preventDefault();
       this.addWaypoint(this.currentProgress);
       return;
@@ -1042,6 +1145,44 @@ export class ReadingRailView {
     this.lastReadTickIndex = nextIndex;
   }
 
+  private updateLabelBranch(): boolean {
+    if (this.outlineScope === "all") {
+      if (this.lastLabelBranchKey === "all") {
+        return false;
+      }
+      this.lastLabelBranchKey = "all";
+      this.labels.forEach((label) => {
+        label.hidden = false;
+      });
+      return true;
+    }
+    let branchStart = -1;
+    for (let index = Math.min(this.activeHeadingIndex, this.entries.length - 1); index >= 0; index -= 1) {
+      if (this.entries[index]?.level === 2) {
+        branchStart = index;
+        break;
+      }
+    }
+    let branchEnd = this.entries.length;
+    if (branchStart >= 0) {
+      for (let index = branchStart + 1; index < this.entries.length; index += 1) {
+        if (this.entries[index]?.level === 2) {
+          branchEnd = index;
+          break;
+        }
+      }
+    }
+    const branchKey = `${branchStart}:${branchEnd}`;
+    if (branchKey === this.lastLabelBranchKey) {
+      return false;
+    }
+    this.lastLabelBranchKey = branchKey;
+    this.labels.forEach((label, index) => {
+      label.hidden = branchStart < 0 || index < branchStart || index >= branchEnd;
+    });
+    return true;
+  }
+
   private updateProgressState(progress: number): void {
     this.currentProgress = clamp01(progress);
     this.targetPosition = this.currentProgress * this.trackHeight;
@@ -1071,7 +1212,16 @@ export class ReadingRailView {
 
   private renderWaypoints(): void {
     const document = this.root.ownerDocument;
-    this.waypointButtons = this.waypoints.map((progress) => {
+    const resolved = this.waypoints.map((waypoint) => ({
+      waypoint,
+      progress: resolveReadingMarkerProgress(waypoint, this.entries),
+    }));
+    const renderKey = JSON.stringify(resolved);
+    if (renderKey === this.lastWaypointRenderKey) {
+      return;
+    }
+    this.lastWaypointRenderKey = renderKey;
+    this.waypointButtons = resolved.map(({ waypoint: storedWaypoint, progress }) => {
       const percentage = Math.round(progress * 100);
       const waypoint = document.createElement("button");
       waypoint.type = "button";
@@ -1096,7 +1246,7 @@ export class ReadingRailView {
       waypoint.addEventListener("contextmenu", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        this.removeWaypoint(progress);
+        this.removeWaypoint(storedWaypoint);
       });
       waypoint.addEventListener("keydown", (event) => {
         if (event.key !== "Delete" && event.key !== "Backspace") {
@@ -1104,18 +1254,23 @@ export class ReadingRailView {
         }
         event.preventDefault();
         event.stopPropagation();
-        this.removeWaypoint(progress);
+        this.removeWaypoint(storedWaypoint);
       });
       return waypoint;
     });
-    this.waypointsContainer.replaceChildren(...this.waypointButtons);
+    this.waypointsContainer.replaceChildren(this.resumeMarker, ...this.waypointButtons);
   }
 
   private addWaypoint(progress: number): void {
-    const next = normalizeWaypoints([...this.waypoints, progress]);
+    const next = normalizeWaypoints([
+      ...this.waypoints,
+      createSemanticMarker(progress, this.entries, Date.now()),
+    ]);
     if (
       next.length === this.waypoints.length
-      && next.every((value, index) => value === this.waypoints[index])
+      && next.every((value, index) => (
+        JSON.stringify(value) === JSON.stringify(this.waypoints[index])
+      ))
     ) {
       return;
     }
@@ -1124,8 +1279,8 @@ export class ReadingRailView {
     this.callbacks.onWaypointsChange?.([...this.waypoints]);
   }
 
-  private removeWaypoint(progress: number): void {
-    const next = this.waypoints.filter((waypoint) => waypoint !== progress);
+  private removeWaypoint(waypoint: ReadingWaypoint): void {
+    const next = this.waypoints.filter((candidate) => candidate !== waypoint);
     if (next.length === this.waypoints.length) {
       return;
     }

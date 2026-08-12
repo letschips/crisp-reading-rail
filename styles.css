@@ -191,6 +191,32 @@ body .crisp-reading-rail-native-scrollbar::-webkit-scrollbar {
     scale 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
+.crisp-reading-rail .crisp-reading-rail__resume-marker {
+  position: absolute;
+  top: calc(var(--crisp-reading-resume-progress) * 100%);
+  right: 3px;
+  z-index: 1;
+  width: 9px;
+  height: 9px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 7px;
+  line-height: 9px;
+  opacity: 0.72;
+  pointer-events: auto;
+  transform: translateY(-50%);
+}
+
+.crisp-reading-rail .crisp-reading-rail__resume-marker:hover,
+.crisp-reading-rail .crisp-reading-rail__resume-marker:focus-visible {
+  color: var(--crisp-reading-accent);
+  opacity: 1;
+}
+
 .crisp-reading-rail .crisp-reading-rail__waypoint:focus-visible {
   outline: 1px solid var(--interactive-accent);
   outline-offset: 2px;

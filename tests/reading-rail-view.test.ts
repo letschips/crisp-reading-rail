@@ -102,6 +102,97 @@ afterEach(() => {
 });
 
 describe("ReadingRailView", () => {
+  it("shows only the active H2 branch labels in current-H2 scope", () => {
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    });
+    const entries = [
+      { ...makeEntry(), text: "A", level: 2, sourceLine: 1, progress: 0.1 },
+      { ...makeEntry(), text: "A detail", level: 3, sourceLine: 2, progress: 0.2 },
+      { ...makeEntry(), text: "B", level: 2, sourceLine: 3, progress: 0.6 },
+      { ...makeEntry(), text: "B detail", level: 3, sourceLine: 4, progress: 0.7 },
+    ];
+    view.setOutline(entries, 20);
+    view.setOutlineScope("currentH2");
+    view.setActiveHeading(3);
+
+    const labels = [...host.querySelectorAll<HTMLButtonElement>(
+      ".crisp-reading-rail__label",
+    )];
+    expect(labels.map((label) => label.hidden)).toEqual([true, true, false, false]);
+    expect(host.querySelectorAll(".crisp-reading-rail__heading-tick")).toHaveLength(4);
+  });
+
+  it("pins locally and supports P Escape J K keyboard controls", () => {
+    vi.useFakeTimers();
+    const host = document.createElement("div");
+    const onHeadingStep = vi.fn();
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+      onHeadingStep,
+    });
+    view.setOutline([makeEntry()], 20);
+    const track = host.querySelector<HTMLElement>('[role="slider"]')!;
+    const root = host.querySelector<HTMLElement>(".crisp-reading-rail")!;
+
+    track.dispatchEvent(new KeyboardEvent("keydown", { key: "p", bubbles: true }));
+    expect(root.classList.contains("is-pinned")).toBe(true);
+    expect(root.classList.contains("is-expanded")).toBe(true);
+    host.dispatchEvent(new Event("pointerleave"));
+    vi.advanceTimersByTime(4000);
+    expect(root.classList.contains("is-expanded")).toBe(true);
+
+    track.dispatchEvent(new KeyboardEvent("keydown", { key: "j", bubbles: true }));
+    track.dispatchEvent(new KeyboardEvent("keydown", { key: "k", bubbles: true }));
+    expect(onHeadingStep).toHaveBeenNthCalledWith(1, 1);
+    expect(onHeadingStep).toHaveBeenNthCalledWith(2, -1);
+
+    track.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(root.classList.contains("is-pinned")).toBe(false);
+    expect(root.classList.contains("is-expanded")).toBe(false);
+  });
+
+  it("keeps a session resume marker fixed while live progress changes", () => {
+    const host = document.createElement("div");
+    const onProgressSelect = vi.fn();
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect,
+    });
+    view.setOutline([makeEntry()], 20);
+    view.setResumeMarker(0.25);
+    const marker = host.querySelector<HTMLButtonElement>(
+      ".crisp-reading-rail__resume-marker",
+    );
+    expect(marker?.dataset.progress).toBe("0.25");
+
+    view.setProgress(0.8);
+    expect(marker?.dataset.progress).toBe("0.25");
+    marker?.click();
+    expect(onProgressSelect).toHaveBeenCalledWith(0.25, false, false);
+  });
+
+  it("reanchors semantic waypoints to their current heading position", () => {
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    });
+    view.setOutline([{ ...makeEntry(), text: "Methods", sourceLine: 20, progress: 0.4 }], 20);
+    view.setWaypoints([{
+      progress: 0.8,
+      headingText: "Methods",
+      headingLevel: 2,
+      headingSourceLine: 20,
+    }]);
+    expect(host.querySelector<HTMLElement>(
+      ".crisp-reading-rail__waypoint",
+    )?.dataset.progress).toBe("0.4");
+  });
+
   it("renders one local slider and button labels without global handlers", () => {
     const host = document.createElement("div");
     const view = ReadingRailView.mount(host, {
@@ -262,7 +353,7 @@ describe("ReadingRailView", () => {
       bubbles: true,
       cancelable: true,
     }));
-    expect(onWaypointsChange).toHaveBeenLastCalledWith([0.75]);
+    expect(onWaypointsChange).toHaveBeenLastCalledWith([{ progress: 0.75 }]);
     expect(host.querySelectorAll(".crisp-reading-rail__waypoint")).toHaveLength(1);
   });
 
@@ -302,7 +393,9 @@ describe("ReadingRailView", () => {
       cancelable: true,
       clientY: 40,
     }));
-    expect(onWaypointsChange).toHaveBeenLastCalledWith([0.4]);
+    expect(onWaypointsChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({ progress: 0.4 }),
+    ]);
 
     view.setProgress(0.65);
     track.dispatchEvent(new KeyboardEvent("keydown", {
@@ -310,7 +403,10 @@ describe("ReadingRailView", () => {
       bubbles: true,
       cancelable: true,
     }));
-    expect(onWaypointsChange).toHaveBeenLastCalledWith([0.4, 0.65]);
+    expect(onWaypointsChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({ progress: 0.4 }),
+      expect.objectContaining({ progress: 0.65 }),
+    ]);
     expect(track.getAttribute("aria-description")).toContain("Double-click");
 
     onWaypointsChange.mockClear();

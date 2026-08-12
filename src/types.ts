@@ -17,3 +17,15 @@ export interface OutlineEntry extends OutlineHeading {
   labelY: number;
   target: HTMLElement | null;
 }
+
+export interface ReadingWaypoint {
+  progress: number;
+  headingText?: string;
+  headingLevel?: number;
+  headingSourceLine?: number;
+  createdAt?: number;
+}
+
+export interface ReadingMemory extends ReadingWaypoint {
+  updatedAt: number;
+}

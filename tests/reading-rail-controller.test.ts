@@ -138,6 +138,9 @@ function makeView(): RailView & {
     setProgress: vi.fn(),
     setActiveHeading: vi.fn(),
     setWaypoints: vi.fn(),
+    setResumeMarker: vi.fn(),
+    setOutlineScope: vi.fn(),
+    togglePinned: vi.fn(() => true),
     setExpanded: vi.fn(),
     setVisible(visible) {
       this.visible = visible;
@@ -186,6 +189,75 @@ describe("collectRenderedHeadings", () => {
 });
 
 describe("ReadingRailController", () => {
+  it("applies the selected heading depth and per-note disabled preference", () => {
+    const { host, scroller } = makeFixture();
+    const clock = makeEnvironment();
+    const view = makeView();
+    const controller = new ReadingRailController({
+      host,
+      scroller,
+      preview: scroller,
+      getHeadings: () => [
+        { text: "Section", level: 2, sourceLine: 2 },
+        { text: "Detail", level: 3, sourceLine: 5 },
+      ],
+      getLineCount: () => 10,
+      getOutlinePreferences: () => ({ enabled: false, maxLevel: 2, scope: "all" }),
+      environment: clock.environment,
+      createView: () => view,
+    });
+    controller.start();
+    clock.flushFrame();
+    const entries = vi.mocked(view.setOutline).mock.calls[0][0];
+    expect(entries.map((entry) => entry.text)).toEqual(["Section"]);
+    expect(view.visible).toBe(false);
+    expect(scroller.classList.contains("crisp-reading-rail-native-scrollbar")).toBe(true);
+    controller.destroy();
+  });
+
+  it("shows one reanchored resume marker and debounces reading-memory writes", () => {
+    const { host, scroller } = makeFixture();
+    const clock = makeEnvironment();
+    const view = makeView();
+    const setReadingMemory = vi.fn();
+    const controller = new ReadingRailController({
+      host,
+      scroller,
+      preview: scroller,
+      getHeadings: () => [{ text: "Methods", level: 2, sourceLine: 10 }],
+      getLineCount: () => 40,
+      getReadingMemory: () => ({
+        progress: 0.8,
+        headingText: "Methods",
+        headingLevel: 2,
+        headingSourceLine: 10,
+        updatedAt: 1,
+      }),
+      setReadingMemory,
+      environment: clock.environment,
+      createView: (_host, callbacks) => {
+        view.callbacks = callbacks;
+        return view;
+      },
+    });
+    controller.start();
+    clock.flushFrame();
+    expect(view.setResumeMarker).toHaveBeenCalledWith(expect.any(Number));
+
+    setMetric(scroller, "scrollTop", 500);
+    scroller.dispatchEvent(new Event("scroll"));
+    setMetric(scroller, "scrollTop", 600);
+    scroller.dispatchEvent(new Event("scroll"));
+    expect(setReadingMemory).not.toHaveBeenCalled();
+    clock.flushTimers();
+    expect(setReadingMemory).toHaveBeenCalledTimes(1);
+    expect(setReadingMemory).toHaveBeenCalledWith(expect.objectContaining({
+      progress: 0.6,
+      updatedAt: expect.any(Number),
+    }));
+    controller.destroy();
+  });
+
   it("coalesces scroll work, applies visibility rules, and cleans up", () => {
     const { host, scroller } = makeFixture();
     const clock = makeEnvironment();
@@ -721,7 +793,7 @@ describe("ReadingRailController", () => {
       scroller,
       preview: scroller,
       getHeadings: () => [],
-      getWaypoints: () => [0.2, 0.8],
+      getWaypoints: () => [{ progress: 0.2 }, { progress: 0.8 }],
       setWaypoints,
       environment: clock.environment,
       createView: (_host, callbacks) => {
@@ -732,10 +804,13 @@ describe("ReadingRailController", () => {
 
     controller.start();
     clock.flushFrame();
-    expect(view.setWaypoints).toHaveBeenCalledWith([0.2, 0.8]);
+    expect(view.setWaypoints).toHaveBeenCalledWith([
+      { progress: 0.2 },
+      { progress: 0.8 },
+    ]);
 
-    view.callbacks?.onWaypointsChange?.([0.4]);
-    expect(setWaypoints).toHaveBeenCalledWith([0.4]);
+    view.callbacks?.onWaypointsChange?.([{ progress: 0.4 }]);
+    expect(setWaypoints).toHaveBeenCalledWith([{ progress: 0.4 }]);
     controller.destroy();
   });
 

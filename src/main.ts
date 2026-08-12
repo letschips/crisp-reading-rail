@@ -12,10 +12,13 @@ import { ReadingPaneRegistry } from "./pane-registry";
 import {
   DEFAULT_SETTINGS,
   normalizeSettings,
+  rewriteReadingMemoryMapPaths,
   rewriteWaypointMapPaths,
+  updateReadingMemoryMap,
   updateWaypointMap,
   type CrispReadingRailSettings,
 } from "./settings";
+import type { ReadingMemory, ReadingWaypoint } from "./types";
 import { createAboutCard, createSettingGroup } from "./settings-ui";
 import {
   clearLicenseVerificationCache,
@@ -25,6 +28,10 @@ import {
   READING_RAIL_SOUND_STYLE_OPTIONS,
   normalizeSoundStyle,
 } from "./sound-styles";
+import {
+  normalizeOutlineMaxLevel,
+  normalizeOutlineScope,
+} from "./outline-preferences";
 
 interface CompanionPluginRegistry {
   plugins?: {
@@ -87,6 +94,16 @@ export default class CrispReadingRailPlugin extends Plugin {
       },
     });
     this.addCommand({
+      id: "jump-to-last-reading-position",
+      name: "Jump to last reading position",
+      callback: () => this.registry?.jumpToLastReadingPosition(),
+    });
+    this.addCommand({
+      id: "toggle-pinned-outline",
+      name: "Toggle pinned outline",
+      callback: () => this.registry?.togglePinnedOutline(),
+    });
+    this.addCommand({
       id: "jump-to-next-heading",
       name: "Jump to next heading",
       callback: () => this.registry?.jumpNextHeading(),
@@ -137,6 +154,15 @@ export default class CrispReadingRailPlugin extends Plugin {
           get: (filePath) => this.settings.waypoints[filePath] ?? [],
           set: (filePath, waypoints) => this.updateWaypoints(filePath, waypoints),
         },
+        readingMemory: {
+          get: (filePath) => this.settings.readingMemory[filePath] ?? null,
+          set: (filePath, memory) => this.updateReadingMemory(filePath, memory),
+        },
+        outlinePreferences: () => ({
+          enabled: true,
+          maxLevel: this.settings.outlineMaxLevel,
+          scope: this.settings.outlineScope,
+        }),
       });
       this.registry.reconcile();
 
@@ -147,10 +173,10 @@ export default class CrispReadingRailPlugin extends Plugin {
       this.registerEvent(this.app.workspace.on("window-open", scheduleReconcile));
       this.registerEvent(this.app.workspace.on("window-close", scheduleReconcile));
       this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
-        this.rewriteWaypointPaths(oldPath, file.path);
+        this.rewriteStoredPaths(oldPath, file.path);
       }));
       this.registerEvent(this.app.vault.on("delete", (file) => {
-        this.rewriteWaypointPaths(file.path, null);
+        this.rewriteStoredPaths(file.path, null);
       }));
       this.registerEvent(this.app.metadataCache.on("changed", (file) => {
         this.registry?.refreshFile(file);
@@ -179,6 +205,7 @@ export default class CrispReadingRailPlugin extends Plugin {
   async saveSettings(): Promise<void> {
     await this.persistSettings();
     this.registry?.refreshAppearance();
+    this.registry?.refreshAll();
   }
 
   private scheduleReconcile(): void {
@@ -205,7 +232,7 @@ export default class CrispReadingRailPlugin extends Plugin {
 
   private updateWaypoints(
     filePath: string,
-    waypoints: readonly number[],
+    waypoints: readonly ReadingWaypoint[],
   ): void {
     this.settings.waypoints = updateWaypointMap(
       this.settings.waypoints,
@@ -217,18 +244,32 @@ export default class CrispReadingRailPlugin extends Plugin {
     });
   }
 
-  private rewriteWaypointPaths(
-    oldPath: string,
-    newPath: string | null,
-  ): void {
-    const previous = this.settings.waypoints;
-    const next = rewriteWaypointMapPaths(previous, oldPath, newPath);
-    if (JSON.stringify(next) === JSON.stringify(previous)) {
+  private updateReadingMemory(filePath: string, memory: ReadingMemory): void {
+    this.settings.readingMemory = updateReadingMemoryMap(
+      this.settings.readingMemory,
+      filePath,
+      memory,
+    );
+    void this.persistSettings().catch((error) => {
+      console.debug("Crisp Reading Rail reading-memory save failed", error);
+    });
+  }
+
+  private rewriteStoredPaths(oldPath: string, newPath: string | null): void {
+    const previousWaypoints = this.settings.waypoints;
+    const previousMemory = this.settings.readingMemory;
+    const nextWaypoints = rewriteWaypointMapPaths(previousWaypoints, oldPath, newPath);
+    const nextMemory = rewriteReadingMemoryMapPaths(previousMemory, oldPath, newPath);
+    if (
+      JSON.stringify(nextWaypoints) === JSON.stringify(previousWaypoints)
+      && JSON.stringify(nextMemory) === JSON.stringify(previousMemory)
+    ) {
       return;
     }
-    this.settings.waypoints = next;
+    this.settings.waypoints = nextWaypoints;
+    this.settings.readingMemory = nextMemory;
     void this.persistSettings().catch((error) => {
-      console.debug("Crisp Reading Rail waypoint path save failed", error);
+      console.debug("Crisp Reading Rail stored path save failed", error);
     });
   }
 
@@ -404,12 +445,37 @@ class CrispReadingRailSettingTab extends PluginSettingTab {
       "标题导航、阅读书签与键盘操作。",
       false,
     );
+    new Setting(outlineBody)
+      .setName("标题层级")
+      .setDesc("选择轨道与展开大纲显示到哪一级标题。")
+      .addDropdown((dropdown) => dropdown
+        .addOption("2", "仅 H2")
+        .addOption("3", "H2–H3")
+        .addOption("4", "H2–H4")
+        .setValue(String(this.plugin.settings.outlineMaxLevel))
+        .onChange(async (value) => {
+          this.plugin.settings.outlineMaxLevel = normalizeOutlineMaxLevel(value);
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(outlineBody)
+      .setName("展开范围")
+      .setDesc("显示全部标题，或只展开当前 H2 章节及其子标题；刻度仍保留全文位置。")
+      .addDropdown((dropdown) => dropdown
+        .addOption("all", "全部标题")
+        .addOption("currentH2", "当前 H2 分支")
+        .setValue(this.plugin.settings.outlineScope)
+        .onChange(async (value) => {
+          this.plugin.settings.outlineScope = normalizeOutlineScope(value);
+          await this.plugin.saveSettings();
+        }));
     const description = outlineBody.ownerDocument.createElement("p");
     description.className = "setting-item-description";
     description.textContent = [
       "轨道索引阅读视图中的 H2–H4 标题。",
       "双击轨道，或聚焦轨道后按 M，可为当前笔记保存阅读书签。",
       "右键书签（或聚焦后按 Delete）可删除。",
+      "按 P 固定/释放展开大纲，Esc 释放并收起，J/K 跳到下一个/上一个标题。",
     ].join("");
     outlineBody.append(description);
 

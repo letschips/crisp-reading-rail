@@ -7,11 +7,21 @@ import {
 } from "./outline-model";
 import { calculateProgress, calculateTickCount, clamp01 } from "./progress";
 import { ReadingRailView } from "./reading-rail-view";
+import {
+  createSemanticMarker,
+  resolveReadingMarkerProgress,
+} from "./reading-memory";
 import type {
   RailAppearanceProvider,
   RailViewCallbacks,
 } from "./reading-rail-view";
-import type { OutlineEntry, OutlineHeading } from "./types";
+import type {
+  OutlineEntry,
+  OutlineHeading,
+  ReadingMemory,
+  ReadingWaypoint,
+} from "./types";
+import type { OutlinePreferences, OutlineScope } from "./outline-preferences";
 
 const MIN_PANE_WIDTH = 680;
 const TRACK_VERTICAL_INSET = 36;
@@ -20,6 +30,7 @@ const LABEL_GAP = 4;
 const HEADING_ACTIVATION_OFFSET = 80;
 const STRUCTURE_REFRESH_DELAY = 80;
 const RESIZE_REFRESH_DELAY = 120;
+const READING_MEMORY_SAVE_DELAY = 1200;
 const NAVIGATION_MIN_DURATION = 260;
 const NAVIGATION_MAX_DURATION = 900;
 const NAVIGATION_MS_PER_PIXEL = 0.08;
@@ -90,7 +101,10 @@ export interface RailView {
   setOutline(entries: readonly OutlineEntry[], tickCount: number): void;
   setProgress(progress: number): void;
   setActiveHeading(index: number): void;
-  setWaypoints(waypoints: readonly number[]): void;
+  setWaypoints(waypoints: readonly (ReadingWaypoint | number)[]): void;
+  setResumeMarker(progress: number | null): void;
+  setOutlineScope(scope: OutlineScope): void;
+  togglePinned(): boolean;
   setExpanded(expanded: boolean): void;
   setVisible(visible: boolean): void;
   refreshAppearance(): void;
@@ -103,8 +117,11 @@ export interface ReadingRailControllerOptions {
   preview: HTMLElement;
   getHeadings(): readonly OutlineHeading[];
   getLineCount?(): number;
-  getWaypoints?(): readonly number[];
-  setWaypoints?(waypoints: readonly number[]): void;
+  getWaypoints?(): readonly (ReadingWaypoint | number)[];
+  setWaypoints?(waypoints: readonly ReadingWaypoint[]): void;
+  getReadingMemory?(): ReadingMemory | null;
+  setReadingMemory?(memory: ReadingMemory): void;
+  getOutlinePreferences?(): OutlinePreferences;
   appearance?: RailAppearanceProvider;
   sound?: RailSoundProvider;
   environment?: RailControllerEnvironment;
@@ -139,8 +156,11 @@ export class ReadingRailController {
   private readonly window: Window | undefined;
   private readonly getHeadings: () => readonly OutlineHeading[];
   private readonly getLineCount: () => number;
-  private readonly getWaypoints: () => readonly number[];
-  private readonly setWaypoints: (waypoints: readonly number[]) => void;
+  private readonly getWaypoints: () => readonly (ReadingWaypoint | number)[];
+  private readonly setWaypoints: (waypoints: readonly ReadingWaypoint[]) => void;
+  private readonly getReadingMemory: () => ReadingMemory | null;
+  private readonly setReadingMemory: (memory: ReadingMemory) => void;
+  private readonly getOutlinePreferences: () => OutlinePreferences;
   private readonly environment: RailControllerEnvironment;
   private readonly appearance?: RailAppearanceProvider;
   private readonly sound?: RailSoundProvider;
@@ -162,6 +182,9 @@ export class ReadingRailController {
   private lastDragHeadingIndex: number | null = null;
   private refreshTimer: number | null = null;
   private resizeRefreshTimer: number | null = null;
+  private readingMemoryTimer: number | null = null;
+  private sessionResumeProgress: number | null = null;
+  private resumeMarkerInitialized = false;
   private observedHostWidth = 0;
   private observedHostHeight = 0;
   private observedScrollerHeight = 0;
@@ -183,6 +206,13 @@ export class ReadingRailController {
     this.getLineCount = options.getLineCount ?? (() => 0);
     this.getWaypoints = options.getWaypoints ?? (() => []);
     this.setWaypoints = options.setWaypoints ?? (() => undefined);
+    this.getReadingMemory = options.getReadingMemory ?? (() => null);
+    this.setReadingMemory = options.setReadingMemory ?? (() => undefined);
+    this.getOutlinePreferences = options.getOutlinePreferences ?? (() => ({
+      enabled: true,
+      maxLevel: 4,
+      scope: "all",
+    }));
     this.appearance = options.appearance;
     this.sound = options.sound;
     this.environment = options.environment ?? createDefaultEnvironment(options.host);
@@ -209,6 +239,16 @@ export class ReadingRailController {
     }
   }
 
+  jumpToReadingMemory(): void {
+    if (this.sessionResumeProgress !== null) {
+      this.navigateToProgress(this.sessionResumeProgress, false, false);
+    }
+  }
+
+  togglePinnedOutline(): void {
+    this.view?.togglePinned();
+  }
+
   start(): void {
     if (this.started || this.destroyed) {
       return;
@@ -225,6 +265,7 @@ export class ReadingRailController {
       onProgressDragEnd: (progress) => this.settleDraggedProgress(progress),
       onProgressDragCancel: (progress) => this.cancelDraggedProgress(progress),
       onWaypointsChange: (waypoints) => this.setWaypoints(waypoints),
+      onHeadingStep: (delta) => this.jumpHeading(delta),
     }, this.appearance);
     this.scroller.addEventListener("scroll", this.handleScroll, { passive: true });
     this.scroller.addEventListener("wheel", this.handleManualNavigation, { passive: true });
@@ -251,10 +292,12 @@ export class ReadingRailController {
 
     const maxScroll = Math.max(0, this.scroller.scrollHeight - this.scroller.clientHeight);
     const trackHeight = Math.max(0, this.host.clientHeight - TRACK_VERTICAL_INSET);
+    const preferences = this.getOutlinePreferences();
     const visible = this.host.isConnected
       && this.host.clientWidth >= MIN_PANE_WIDTH
       && maxScroll > 0
-      && trackHeight > 0;
+      && trackHeight > 0
+      && preferences.enabled;
     this.scroller.classList.toggle(
       NATIVE_SCROLLBAR_CLASS,
       this.host.isConnected && maxScroll > 0 && !visible,
@@ -263,9 +306,10 @@ export class ReadingRailController {
       RIGHT_ANNOTATION_AVOIDANCE_CLASS,
       this.preview.querySelector(".crisp-ann-margin-item--right") !== null,
     );
-    const rendered = collectRenderedHeadings(this.preview);
+    const rendered = collectRenderedHeadings(this.preview)
+      .filter((heading) => heading.level <= preferences.maxLevel);
     const unresolvedEntries = buildOutlineEntries(
-      this.getHeadings(),
+      this.getHeadings().filter((heading) => heading.level <= preferences.maxLevel),
       rendered,
       0,
       maxScroll,
@@ -280,6 +324,15 @@ export class ReadingRailController {
 
     this.view.setWaypoints(this.getWaypoints());
     this.view.setOutline(this.entries, calculateTickCount(trackHeight));
+    this.view.setOutlineScope(preferences.scope);
+    if (!this.resumeMarkerInitialized) {
+      const memory = this.getReadingMemory();
+      this.sessionResumeProgress = memory
+        ? resolveReadingMarkerProgress(memory, this.entries)
+        : null;
+      this.resumeMarkerInitialized = true;
+    }
+    this.view.setResumeMarker(this.sessionResumeProgress);
     this.view.setVisible(visible);
     this.updateScrollState();
     this.finishPendingHeadingNavigation();
@@ -312,6 +365,10 @@ export class ReadingRailController {
       this.refreshTimer = null;
     }
     this.cancelResizeRefresh();
+    if (this.readingMemoryTimer !== null) {
+      this.environment.clearTimeout(this.readingMemoryTimer);
+      this.readingMemoryTimer = null;
+    }
     this.resizeObserver?.disconnect();
     this.mutationObserver?.disconnect();
     this.resizeObserver = null;
@@ -329,7 +386,32 @@ export class ReadingRailController {
 
   private readonly handleScroll = (): void => {
     this.scheduleFrame(false);
+    this.scheduleReadingMemorySave();
   };
+
+  private scheduleReadingMemorySave(): void {
+    if (this.readingMemoryTimer !== null) {
+      this.environment.clearTimeout(this.readingMemoryTimer);
+    }
+    this.readingMemoryTimer = this.environment.setTimeout(() => {
+      this.readingMemoryTimer = null;
+      const progress = calculateProgress(
+        this.scroller.scrollTop,
+        this.scroller.scrollHeight,
+        this.scroller.clientHeight,
+      );
+      const marker = createSemanticMarker(progress, this.entries, Date.now());
+      this.setReadingMemory({
+        progress: marker.progress,
+        ...(marker.headingText !== undefined ? { headingText: marker.headingText } : {}),
+        ...(marker.headingLevel !== undefined ? { headingLevel: marker.headingLevel } : {}),
+        ...(marker.headingSourceLine !== undefined
+          ? { headingSourceLine: marker.headingSourceLine }
+          : {}),
+        updatedAt: Date.now(),
+      });
+    }, READING_MEMORY_SAVE_DELAY);
+  }
 
   private readonly handleManualNavigation = (): void => {
     this.pendingHeadingLine = null;

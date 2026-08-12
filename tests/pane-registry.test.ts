@@ -9,6 +9,8 @@ function makeController() {
   return {
     start: vi.fn(),
     jumpHeading: vi.fn(),
+    jumpToReadingMemory: vi.fn(),
+    togglePinnedOutline: vi.fn(),
     refresh: vi.fn(),
     refreshAppearance: vi.fn(),
     destroy: vi.fn(),
@@ -229,10 +231,53 @@ describe("ReadingPaneRegistry", () => {
 
     registry.jumpNextHeading();
     registry.jumpPreviousHeading();
+    registry.jumpToLastReadingPosition();
+    registry.togglePinnedOutline();
 
     expect(controllers[0].jumpHeading).not.toHaveBeenCalled();
     expect(controllers[1].jumpHeading).toHaveBeenNthCalledWith(1, 1);
     expect(controllers[1].jumpHeading).toHaveBeenNthCalledWith(2, -1);
+    expect(controllers[1].jumpToReadingMemory).toHaveBeenCalledTimes(1);
+    expect(controllers[1].togglePinnedOutline).toHaveBeenCalledTimes(1);
+    registry.destroy();
+  });
+
+  it("resolves global outline preferences with per-note frontmatter", () => {
+    const view = {
+      file: { path: "Notes/Focused.md" },
+      getMode: () => "preview" as const,
+    };
+    const leaf = { view } as unknown as WorkspaceLeaf;
+    const factory = vi.fn(() => makeController());
+    const registry = new ReadingPaneRegistry(
+      {
+        workspace: { iterateAllLeaves: (callback) => callback(leaf) },
+        metadataCache: { getFileCache: () => ({
+          headings: [],
+          frontmatter: {
+            "crisp-reading-rail-levels": 2,
+            "crisp-reading-rail-scope": "current-h2",
+          },
+        }) },
+      },
+      {
+        outlinePreferences: () => ({ enabled: true, maxLevel: 4, scope: "all" }),
+        isMarkdownView: (candidate: View): candidate is MarkdownView => "getMode" in candidate,
+        resolveElements: () => ({
+          host: document.createElement("div"),
+          scroller: document.createElement("div"),
+          preview: document.createElement("div"),
+        }),
+        createController: factory,
+      },
+    );
+    registry.reconcile();
+    const options = (factory.mock.calls as unknown as Array<[ReadingRailControllerOptions]>)[0][0];
+    expect(options.getOutlinePreferences?.()).toEqual({
+      enabled: true,
+      maxLevel: 2,
+      scope: "currentH2",
+    });
     registry.destroy();
   });
 
@@ -242,7 +287,9 @@ describe("ReadingPaneRegistry", () => {
       getMode: () => "preview" as const,
     };
     const leaf = { view } as unknown as WorkspaceLeaf;
-    const get = vi.fn((path: string) => path === "Notes/First.md" ? [0.2] : [0.8]);
+    const get = vi.fn((path: string) => path === "Notes/First.md"
+      ? [{ progress: 0.2 }]
+      : [{ progress: 0.8 }]);
     const set = vi.fn();
     const factory = vi.fn(() => makeController());
     const registry = new ReadingPaneRegistry(
@@ -266,12 +313,12 @@ describe("ReadingPaneRegistry", () => {
       Array<[ReadingRailControllerOptions]>;
     const options = calls[0][0];
 
-    expect(options.getWaypoints?.()).toEqual([0.2]);
-    options.setWaypoints?.([0.4]);
-    expect(set).toHaveBeenCalledWith("Notes/First.md", [0.4]);
+    expect(options.getWaypoints?.()).toEqual([{ progress: 0.2 }]);
+    options.setWaypoints?.([{ progress: 0.4 }]);
+    expect(set).toHaveBeenCalledWith("Notes/First.md", [{ progress: 0.4 }]);
 
     view.file.path = "Notes/Second.md";
-    expect(options.getWaypoints?.()).toEqual([0.8]);
+    expect(options.getWaypoints?.()).toEqual([{ progress: 0.8 }]);
     registry.destroy();
   });
 

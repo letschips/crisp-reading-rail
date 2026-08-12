@@ -12,10 +12,17 @@ import type {
   Workspace,
   WorkspaceLeaf,
 } from "obsidian";
+import type { ReadingMemory, ReadingWaypoint } from "./types";
+import {
+  resolveOutlinePreferences,
+  type OutlinePreferences,
+} from "./outline-preferences";
 
 export interface ControllerLike {
   start(): void;
   jumpHeading(delta: number): void;
+  jumpToReadingMemory(): void;
+  togglePinnedOutline(): void;
   refresh(): void;
   refreshAppearance(): void;
   destroy(): void;
@@ -28,8 +35,13 @@ interface RegistryContext {
 }
 
 export interface ReadingWaypointStore {
-  get(filePath: string): readonly number[];
-  set(filePath: string, waypoints: readonly number[]): void;
+  get(filePath: string): readonly ReadingWaypoint[];
+  set(filePath: string, waypoints: readonly ReadingWaypoint[]): void;
+}
+
+export interface ReadingMemoryStore {
+  get(filePath: string): ReadingMemory | null;
+  set(filePath: string, memory: ReadingMemory): void;
 }
 
 interface PaneElements {
@@ -42,6 +54,8 @@ interface RegistryOptions {
   appearance?: RailAppearanceProvider;
   sound?: RailSoundProvider;
   waypoints?: ReadingWaypointStore;
+  readingMemory?: ReadingMemoryStore;
+  outlinePreferences?(): OutlinePreferences;
   isMarkdownView?(view: View): view is MarkdownView;
   resolveElements?(view: MarkdownView): PaneElements | null;
   createController?(options: ReadingRailControllerOptions): ControllerLike;
@@ -88,6 +102,8 @@ export class ReadingPaneRegistry {
   private readonly appearance?: RailAppearanceProvider;
   private readonly sound?: RailSoundProvider;
   private readonly waypoints?: ReadingWaypointStore;
+  private readonly readingMemory?: ReadingMemoryStore;
+  private readonly outlinePreferences: () => OutlinePreferences;
   private readonly isMarkdownView: (view: View) => view is MarkdownView;
   private readonly resolveElements: (view: MarkdownView) => PaneElements | null;
   private readonly createController: (options: ReadingRailControllerOptions) => ControllerLike;
@@ -99,6 +115,12 @@ export class ReadingPaneRegistry {
     this.appearance = options.appearance;
     this.sound = options.sound;
     this.waypoints = options.waypoints;
+    this.readingMemory = options.readingMemory;
+    this.outlinePreferences = options.outlinePreferences ?? (() => ({
+      enabled: true,
+      maxLevel: 4,
+      scope: "all",
+    }));
     this.isMarkdownView = options.isMarkdownView ?? (
       (view: View): view is MarkdownView => view instanceof MarkdownView
     );
@@ -114,6 +136,32 @@ export class ReadingPaneRegistry {
 
   jumpPreviousHeading(): void {
     this.jumpActiveHeading(-1);
+  }
+
+  jumpToLastReadingPosition(): void {
+    const activeView = this.context.workspace.getActiveViewOfType?.(MarkdownView);
+    if (!activeView) {
+      return;
+    }
+    for (const record of this.controllers.values()) {
+      if (record.view === activeView) {
+        record.controller.jumpToReadingMemory();
+        return;
+      }
+    }
+  }
+
+  togglePinnedOutline(): void {
+    const activeView = this.context.workspace.getActiveViewOfType?.(MarkdownView);
+    if (!activeView) {
+      return;
+    }
+    for (const record of this.controllers.values()) {
+      if (record.view === activeView) {
+        record.controller.togglePinnedOutline();
+        return;
+      }
+    }
   }
 
   reconcile(): void {
@@ -162,6 +210,25 @@ export class ReadingPaneRegistry {
             this.waypoints?.set(path, waypoints);
           }
         },
+        getReadingMemory: () => {
+          const path = view.file?.path;
+          return path ? this.readingMemory?.get(path) ?? null : null;
+        },
+        setReadingMemory: (memory) => {
+          const path = view.file?.path;
+          if (path) {
+            this.readingMemory?.set(path, memory);
+          }
+        },
+        getOutlinePreferences: () => {
+          const cache = view.file
+            ? this.context.metadataCache.getFileCache(view.file)
+            : null;
+          return resolveOutlinePreferences(
+            this.outlinePreferences(),
+            cache?.frontmatter as Record<string, unknown> | undefined,
+          );
+        },
       });
       this.controllers.set(leaf, { ...elements, view, controller });
       controller.start();
@@ -192,6 +259,15 @@ export class ReadingPaneRegistry {
     }
     for (const record of this.controllers.values()) {
       record.controller.refreshAppearance();
+    }
+  }
+
+  refreshAll(): void {
+    if (this.destroyed) {
+      return;
+    }
+    for (const record of this.controllers.values()) {
+      record.controller.refresh();
     }
   }
 

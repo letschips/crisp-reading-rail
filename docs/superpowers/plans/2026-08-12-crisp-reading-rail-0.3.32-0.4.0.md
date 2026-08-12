@@ -103,11 +103,11 @@ it("deduplicates concurrent and recent online license checks", async () => {
 - Numeric legacy waypoints normalize into semantic objects without data loss.
 - Stored last position is shown as a fixed resume marker for the session and is only navigated when clicked or commanded.
 
-- [ ] **Step 1: Write failing pure-data tests for numeric migration, semantic deduplication, path rewrites, and memory pruning**
-- [ ] **Step 2: Implement normalization and resolution helpers and make the pure tests pass**
-- [ ] **Step 3: Write failing controller/view tests for semantic re-anchoring and the non-chasing resume marker**
-- [ ] **Step 4: Implement semantic waypoint rendering, fixed session resume marker, and debounced local progress persistence**
-- [ ] **Step 5: Add `Jump to last reading position` and verify it routes only to the active Reading pane**
+- [x] **Step 1: Write failing pure-data tests for numeric migration, semantic deduplication, path rewrites, and memory pruning**
+- [x] **Step 2: Implement normalization and resolution helpers and make the pure tests pass**
+- [x] **Step 3: Write failing controller/view tests for semantic re-anchoring and the non-chasing resume marker**
+- [x] **Step 4: Implement semantic waypoint rendering, fixed session resume marker, and debounced local progress persistence**
+- [x] **Step 5: Add `Jump to last reading position` and verify it routes only to the active Reading pane**
 
 ### Task 5: 0.4.0 outline preferences and pinned outline
 
@@ -129,12 +129,12 @@ it("deduplicates concurrent and recent online license checks", async () => {
 - Frontmatter keys: `crisp-reading-rail`, `crisp-reading-rail-levels`, and `crisp-reading-rail-scope`.
 - Pane-local keys: `P` toggles pin, `Escape` releases pin/collapses, `J` goes to next heading, and `K` goes to previous heading without animation or sound.
 
-- [ ] **Step 1: Write failing tests for global defaults and frontmatter overrides**
-- [ ] **Step 2: Implement pure preference normalization and registry wiring**
-- [ ] **Step 3: Write failing view tests for current-H2 filtering, pin persistence across pointer leave, and keyboard controls**
-- [ ] **Step 4: Implement branch visibility and pane-local pinning using existing opacity/transform motion only**
-- [ ] **Step 5: Add Chinese settings controls and frontmatter documentation**
-- [ ] **Step 6: Run focused tests plus CSS motion assertions**
+- [x] **Step 1: Write failing tests for global defaults and frontmatter overrides**
+- [x] **Step 2: Implement pure preference normalization and registry wiring**
+- [x] **Step 3: Write failing view tests for current-H2 filtering, pin persistence across pointer leave, and keyboard controls**
+- [x] **Step 4: Implement branch visibility and pane-local pinning using existing opacity/transform motion only**
+- [x] **Step 5: Add Chinese settings controls and frontmatter documentation**
+- [x] **Step 6: Run focused tests plus CSS motion assertions**
 
 ### Task 6: 0.4.0 release, deployment, and live acceptance
 
@@ -150,8 +150,8 @@ it("deduplicates concurrent and recent online license checks", async () => {
 - Produces: final commit and local tag `0.4.0`.
 - Produces: byte-identical source, ALL runtime, and YS runtime while preserving both vaults' `data.json`.
 
-- [ ] **Step 1: Set release metadata to `0.4.0` and document migrations, settings, commands, and frontmatter**
-- [ ] **Step 2: Run the full automated gate and dependency audit**
-- [ ] **Step 3: Deploy with the repository script to ALL and YS, preserving pre-deploy `data.json` hashes**
-- [ ] **Step 4: Reload both plugins and verify version, one rail/controller, no runtime errors, semantic waypoint migration, resume marker, current-H2 mode, and pin keyboard behavior**
-- [ ] **Step 5: Compare source/install hashes, review motion against the animation standards, commit, and create local tag `0.4.0`**
+- [x] **Step 1: Set release metadata to `0.4.0` and document migrations, settings, commands, and frontmatter**
+- [x] **Step 2: Run the full automated gate and dependency audit**
+- [x] **Step 3: Deploy with the repository script to ALL and YS, preserving pre-deploy `data.json` hashes**
+- [x] **Step 4: Reload both plugins and verify version, one rail/controller, no runtime errors, semantic waypoint migration, resume marker, current-H2 mode, and pin keyboard behavior**
+- [x] **Step 5: Compare source/install hashes, review motion against the animation standards, commit, and create local tag `0.4.0`**
