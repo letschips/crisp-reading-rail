@@ -17,7 +17,17 @@ export interface LicenseVerifyResult {
   message?: string;
 }
 
+export interface LicenseVerificationCache {
+  verify(
+    licenseCode: string,
+    targetPluginId: string,
+    verifier: () => Promise<LicenseVerifyResult>,
+  ): Promise<LicenseVerifyResult>;
+  clear(): void;
+}
+
 const WORKER_VERIFY_URL = "https://crisp-license.helloherve-xsn.workers.dev/api/verify-device";
+const LICENSE_CACHE_TTL_MS = 15 * 60 * 1000;
 
 // Crisp 5合1全家桶通用 Ed25519 嵌入公钥
 export const CRISP_PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
@@ -34,6 +44,52 @@ export const CRISP_LICENSE_PRODUCTS = [
   "Crisp Reading Rail",
   "Crisp Base",
 ] as const;
+
+export function createLicenseVerificationCache(
+  ttlMs: number,
+  now: () => number = Date.now,
+): LicenseVerificationCache {
+  const resolved = new Map<string, {
+    expiresAt: number;
+    result: LicenseVerifyResult;
+  }>();
+  const inFlight = new Map<string, Promise<LicenseVerifyResult>>();
+
+  return {
+    verify(licenseCode, targetPluginId, verifier) {
+      const key = `${targetPluginId}\u0000${licenseCode}`;
+      const cached = resolved.get(key);
+      if (cached && cached.expiresAt >= now()) {
+        return Promise.resolve(cached.result);
+      }
+      const pending = inFlight.get(key);
+      if (pending) {
+        return pending;
+      }
+      const operation = verifier().then((result) => {
+        resolved.set(key, {
+          expiresAt: now() + Math.max(0, ttlMs),
+          result,
+        });
+        return result;
+      }).finally(() => {
+        inFlight.delete(key);
+      });
+      inFlight.set(key, operation);
+      return operation;
+    },
+    clear() {
+      resolved.clear();
+      inFlight.clear();
+    },
+  };
+}
+
+const verificationCache = createLicenseVerificationCache(LICENSE_CACHE_TTL_MS);
+
+export function clearLicenseVerificationCache(): void {
+  verificationCache.clear();
+}
 
 
 export function base64UrlToUint8Array(base64url: string): Uint8Array {
@@ -77,6 +133,16 @@ function getDeviceId(): string {
 export async function verifyLicenseCode(
   licenseCode: string,
   targetPluginId: string = "crisp-reading-rail"
+): Promise<LicenseVerifyResult> {
+  const trimmed = licenseCode.trim();
+  return verificationCache.verify(trimmed, targetPluginId, () => (
+    verifyLicenseCodeUncached(trimmed, targetPluginId)
+  ));
+}
+
+async function verifyLicenseCodeUncached(
+  licenseCode: string,
+  targetPluginId: string,
 ): Promise<LicenseVerifyResult> {
   const trimmed = licenseCode.trim();
   if (!trimmed) {

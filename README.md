@@ -2,6 +2,14 @@
 
 Crisp Reading Rail adds a compact reading-progress and heading-navigation rail to the right edge of each eligible Obsidian Markdown Reading view. Its proportional heading marks, orb-centered focus line, animated wave, and optional orbs sit alongside the visual language of Crisp File Explorer without occupying Obsidian's native right sidebar.
 
+## v0.3.32 Reliability & Trust
+
+- 授权设置现在明确说明本地 Ed25519 验签、在线设备数量校验、离线回退，以及在线请求所包含的数据。
+- 相同许可证与产品的验证请求在会话内合并并缓存 15 分钟；修改许可证或手动重新验证会立即清除缓存。
+- 相同标题与标记数据不再重建 Waypoint DOM，重复显隐也不再触发无效测量。
+- 长文持续虚拟化产生的结构变化改为尾随防抖，只在变化稳定后刷新一次。
+- 波浪只更新影响半径内的刻度，并正确复位离开半径的刻度，降低滚动过程中的样式写入量。
+
 ## v0.3.31 behavior
 
 - 修复音阶音效在独立窗口中没有使用该窗口 AudioContext、导致拖动刻度时静音的问题。
@@ -74,7 +82,7 @@ All SVG and PNG resources used by Crisp Reading Rail are installed in this plugi
 
 Open **Settings → Crisp Reading Rail → Navigation sound** to opt into very soft interaction feedback. Sound is off by default. When enabled, dragging across heading marks produces rate-limited quiet ticks, while track clicks, heading selections, and normal drag release use a subtle settle tone. Sound style can be selected independently or follow Crisp File Explorer; release/settle feedback can be muted separately.
 
-Normal wheel, touchpad, touch, keyboard, and programmatic scrolling remains silent. Sounds are synthesized locally with Web Audio; the plugin contains no audio files and makes no network requests.
+Normal wheel, touchpad, touch, keyboard, and programmatic scrolling remains silent. Sounds are synthesized locally with Web Audio; the plugin contains no audio files.
 
 ## Keyboard interaction
 
@@ -109,7 +117,9 @@ The deployment command copies `main.js`, `manifest.json`, `styles.css`, and the 
 
 ## Privacy and safety
 
-Crisp Reading Rail does not access the network, collect telemetry, edit notes, change files, or alter the workspace layout. It reads only the metadata and rendered headings for currently open Markdown Reading panes.
+Crisp Reading Rail does not collect telemetry, edit notes, change files, or alter the workspace layout. It reads only the metadata and rendered headings for currently open Markdown Reading panes.
+
+License validation first verifies the Ed25519 signature locally. When a license is present, activation and premium-feature checks send the license code, an Obsidian device/vault identifier, and the target plugin ID to the Crisp license service to enforce the device limit. Successful or failed results are cached in memory for 15 minutes to avoid repeated requests in the same session. If the service is unreachable, a locally valid signature remains usable through the documented offline fallback.
 
 ## Known exclusions
 

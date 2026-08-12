@@ -17,7 +17,10 @@ import {
   type CrispReadingRailSettings,
 } from "./settings";
 import { createAboutCard, createSettingGroup } from "./settings-ui";
-import { verifyLicenseCode } from "./license";
+import {
+  clearLicenseVerificationCache,
+  verifyLicenseCode,
+} from "./license";
 import {
   READING_RAIL_SOUND_STYLE_OPTIONS,
   normalizeSoundStyle,
@@ -261,7 +264,7 @@ class CrispReadingRailSettingTab extends PluginSettingTab {
     const licenseGroup = createSettingGroup(
       containerEl,
       "软件授权",
-      "纯离线 Ed25519 密钥激活验证",
+      "本地 Ed25519 签名验证，并联网校验设备数量；离线时自动降级为本地验证。",
       true,
     );
 
@@ -287,11 +290,12 @@ class CrispReadingRailSettingTab extends PluginSettingTab {
 
     new Setting(licenseGroup)
       .setName("输入授权码")
-      .setDesc("粘贴购买获取的 Crisp Suite 授权字符串进行离线激活。")
+      .setDesc("激活时会向 Crisp 授权服务发送授权码、设备标识和插件 ID；结果在当前会话缓存 15 分钟。")
       .addText((text) => text
         .setPlaceholder("粘贴 Crisp 授权码...")
         .setValue(this.plugin.settings.licenseCode)
         .onChange(async (value) => {
+          clearLicenseVerificationCache();
           this.plugin.settings.licenseCode = value.trim();
           await this.plugin.saveSettings();
         }))
@@ -299,6 +303,7 @@ class CrispReadingRailSettingTab extends PluginSettingTab {
         .setButtonText("激活 / 重新验证")
         .setCta()
         .onClick(async () => {
+          clearLicenseVerificationCache();
           const result = await verifyLicenseCode(this.plugin.settings.licenseCode, "crisp-reading-rail");
           if (result.valid && result.payload) {
             new Notice(`🎉 Crisp Reading Rail 激活成功！欢迎使用，${result.payload.userName}`);

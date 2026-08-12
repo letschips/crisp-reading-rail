@@ -266,6 +266,22 @@ describe("ReadingRailView", () => {
     expect(host.querySelectorAll(".crisp-reading-rail__waypoint")).toHaveLength(1);
   });
 
+  it("keeps waypoint DOM stable when normalized values do not change", () => {
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    });
+
+    view.setWaypoints([0.25, 0.75]);
+    const firstButtons = [...host.querySelectorAll(".crisp-reading-rail__waypoint")];
+    view.setWaypoints([0.75001, 0.25001]);
+    const secondButtons = [...host.querySelectorAll(".crisp-reading-rail__waypoint")];
+
+    expect(secondButtons).toHaveLength(firstButtons.length);
+    expect(secondButtons.every((button, index) => button === firstButtons[index])).toBe(true);
+  });
+
   it("adds waypoints from a double click or the focused slider M key", () => {
     const onWaypointsChange = vi.fn();
     const onProgressSelect = vi.fn();
@@ -499,6 +515,21 @@ describe("ReadingRailView", () => {
 
     expect(host.querySelector(".crisp-reading-rail")?.hasAttribute("hidden")).toBe(true);
     expect(host.querySelector(".crisp-reading-rail__label")?.getAttribute("aria-current")).toBe("location");
+  });
+
+  it("does not remeasure labels when visibility remains unchanged", () => {
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    });
+    view.setOutline([makeEntry()], 12);
+    const label = host.querySelector<HTMLElement>(".crisp-reading-rail__label")!;
+    const measure = vi.spyOn(label, "getBoundingClientRect");
+
+    view.setVisible(true);
+
+    expect(measure).not.toHaveBeenCalled();
   });
 
   it("does not rewrite unchanged active-heading semantics", () => {

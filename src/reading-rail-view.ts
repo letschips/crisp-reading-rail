@@ -3,6 +3,7 @@ import {
   isSpringSettled,
   isWithinWaveRadius,
   stepSpring,
+  WAVE_DYNAMIC_RADIUS,
 } from "./motion";
 import type { RailSoundProvider } from "./audio-feedback";
 import {
@@ -26,6 +27,34 @@ const COLLAPSE_DELAY = 3000;
 const LABEL_GAP = 4;
 const LINE_FOCUS_HEIGHT = 192;
 const ORB_ROTATION_PER_PX = 3.2;
+
+function lowerBound(values: readonly number[], target: number): number {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if ((values[middle] ?? 0) < target) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  return low;
+}
+
+function upperBound(values: readonly number[], target: number): number {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if ((values[middle] ?? 0) <= target) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  return low;
+}
 
 interface MutationObserverHandle {
   observe(target: Node, options?: MutationObserverInit): void;
@@ -85,9 +114,11 @@ export class ReadingRailView {
   private ticks: HTMLElement[] = [];
   private tickYPositions: number[] = [];
   private tickWaveOffsets: number[] = [];
+  private tickWaveActiveIndices = new Set<number>();
   private headingTicks: HTMLElement[] = [];
   private headingTickYPositions: number[] = [];
   private headingTickWaveOffsets: number[] = [];
+  private headingTickWaveActiveIndices = new Set<number>();
   private labels: HTMLButtonElement[] = [];
   private waypointButtons: HTMLButtonElement[] = [];
   private waypoints: number[] = [];
@@ -263,6 +294,7 @@ export class ReadingRailView {
     });
     this.ticksContainer.replaceChildren(...this.ticks);
     this.tickWaveOffsets = Array.from({ length: this.ticks.length }, () => Number.NaN);
+    this.tickWaveActiveIndices.clear();
 
     this.headingTicks = this.entries.map((entry) => {
       const tick = document.createElement("span");
@@ -280,6 +312,7 @@ export class ReadingRailView {
       { length: this.headingTicks.length },
       () => Number.NaN,
     );
+    this.headingTickWaveActiveIndices.clear();
 
     this.labels = this.entries.map((entry, index) => {
       const label = document.createElement("button");
@@ -325,7 +358,14 @@ export class ReadingRailView {
   }
 
   setWaypoints(waypoints: readonly number[]): void {
-    this.waypoints = normalizeWaypoints(waypoints);
+    const next = normalizeWaypoints(waypoints);
+    if (
+      next.length === this.waypoints.length
+      && next.every((value, index) => value === this.waypoints[index])
+    ) {
+      return;
+    }
+    this.waypoints = next;
     this.renderWaypoints();
   }
 
@@ -356,6 +396,9 @@ export class ReadingRailView {
   }
 
   setVisible(visible: boolean): void {
+    if (visible === this.visible) {
+      return;
+    }
     this.visible = visible;
     this.root.hidden = !visible;
     if (!visible) {
@@ -425,8 +468,10 @@ export class ReadingRailView {
     this.root.remove();
     this.ticks = [];
     this.tickWaveOffsets = [];
+    this.tickWaveActiveIndices.clear();
     this.headingTicks = [];
     this.headingTickWaveOffsets = [];
+    this.headingTickWaveActiveIndices.clear();
     this.labels = [];
     this.waypointButtons = [];
     this.waypoints = [];
@@ -561,11 +606,17 @@ export class ReadingRailView {
       this.lineFocus.style.transform = lineFocusTransform;
       this.lastLineFocusTransform = lineFocusTransform;
     }
-    this.applyWave(this.ticks, this.tickYPositions, this.tickWaveOffsets);
+    this.applyWave(
+      this.ticks,
+      this.tickYPositions,
+      this.tickWaveOffsets,
+      this.tickWaveActiveIndices,
+    );
     this.applyWave(
       this.headingTicks,
       this.headingTickYPositions,
       this.headingTickWaveOffsets,
+      this.headingTickWaveActiveIndices,
     );
     if (
       this.orbMedia
@@ -582,19 +633,43 @@ export class ReadingRailView {
     elements: readonly HTMLElement[],
     positions: readonly number[],
     previousOffsets: number[],
+    activeIndices: Set<number>,
   ): void {
-    elements.forEach((element, index) => {
+    const minimum = this.displayedPosition - WAVE_DYNAMIC_RADIUS;
+    const maximum = this.displayedPosition + WAVE_DYNAMIC_RADIUS;
+    const first = lowerBound(positions, minimum);
+    const end = upperBound(positions, maximum);
+
+    for (const index of [...activeIndices]) {
+      if (index >= first && index < end) {
+        continue;
+      }
+      const element = elements[index];
+      if (element && previousOffsets[index] !== 0) {
+        element.style.setProperty("--crisp-reading-wave-x", "0px");
+        previousOffsets[index] = 0;
+      }
+      activeIndices.delete(index);
+    }
+
+    for (let index = first; index < end; index += 1) {
+      const element = elements[index];
+      if (!element) {
+        continue;
+      }
       const itemY = positions[index] ?? 0;
       const rawOffset = isWithinWaveRadius(this.displayedPosition, itemY)
         ? -gaussianWaveOffset(this.displayedPosition, itemY)
         : 0;
       const offset = Math.round(rawOffset * 100) / 100;
       if (Object.is(previousOffsets[index], offset)) {
-        return;
+        activeIndices.add(index);
+        continue;
       }
       element.style.setProperty("--crisp-reading-wave-x", `${offset}px`);
       previousOffsets[index] = offset;
-    });
+      activeIndices.add(index);
+    }
   }
 
   private applyOrbStyle(style: ResolvedOrbStyle): void {

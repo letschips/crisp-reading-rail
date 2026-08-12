@@ -1,6 +1,6 @@
 {
   "name": "crisp-reading-rail",
-  "version": "0.3.31",
+  "version": "0.3.32",
   "description": "A compact reading-progress and heading navigation rail for Obsidian Markdown Reading view.",
   "main": "main.js",
   "type": "module",

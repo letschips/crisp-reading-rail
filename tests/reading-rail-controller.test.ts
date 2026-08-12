@@ -51,6 +51,7 @@ function makeEnvironment() {
   const cancelledFrames: number[] = [];
   const observers: Array<{ disconnect: ReturnType<typeof vi.fn> }> = [];
   const resizeCallbacks: Array<() => void> = [];
+  const mutationCallbacks: MutationCallback[] = [];
   let frameRequests = 0;
   const environment: RailControllerEnvironment = {
     requestAnimationFrame(callback) {
@@ -77,7 +78,8 @@ function makeEnvironment() {
       observers.push(observer);
       return observer;
     }),
-    createMutationObserver: vi.fn(() => {
+    createMutationObserver: vi.fn((callback) => {
+      mutationCallbacks.push(callback);
       const observer = { observe: vi.fn(), disconnect: vi.fn() };
       observers.push(observer);
       return observer;
@@ -110,6 +112,15 @@ function makeEnvironment() {
     },
     triggerResize() {
       resizeCallbacks.forEach((callback) => callback());
+    },
+    triggerMutation() {
+      mutationCallbacks.forEach((callback) => callback([], {} as MutationObserver));
+    },
+    get pendingTimers() {
+      return timers.size;
+    },
+    get pendingTimerIds() {
+      return [...timers.keys()];
     },
     pendingFrameId() {
       return frames.keys().next().value as number | undefined;
@@ -236,6 +247,34 @@ describe("ReadingRailController", () => {
     }
     expect(view.setOutline).toHaveBeenCalledTimes(1);
 
+    clock.flushTimers();
+    clock.flushFrame();
+    expect(view.setOutline).toHaveBeenCalledTimes(2);
+    controller.destroy();
+  });
+
+  it("waits for continuous structure mutations to settle before one refresh", () => {
+    const { host, scroller } = makeFixture();
+    const clock = makeEnvironment();
+    const view = makeView();
+    const controller = new ReadingRailController({
+      host,
+      scroller,
+      preview: scroller,
+      getHeadings: () => [],
+      environment: clock.environment,
+      createView: () => view,
+    });
+
+    controller.start();
+    clock.flushFrame();
+    clock.triggerMutation();
+    const firstTimerId = clock.pendingTimerIds[0];
+    clock.triggerMutation();
+    clock.triggerMutation();
+
+    expect(clock.pendingTimers).toBe(1);
+    expect(clock.pendingTimerIds[0]).not.toBe(firstTimerId);
     clock.flushTimers();
     clock.flushFrame();
     expect(view.setOutline).toHaveBeenCalledTimes(2);

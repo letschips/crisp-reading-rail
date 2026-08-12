@@ -1,5 +1,22 @@
 # Crisp Reading Rail verification
 
+## v0.3.32 Reliability & Trust
+
+Verified on 2026-08-12 in the isolated release worktree.
+
+### Fixed
+
+- License checks now deduplicate concurrent requests and cache per license/product result for 15 minutes; editing the license or requesting a manual recheck clears the cache.
+- Settings and README now disclose local Ed25519 verification, online device-limit verification, the transmitted identifiers, and offline fallback behavior.
+- Unchanged waypoint data and repeated visibility state no longer rebuild DOM or repeat label measurements.
+- Structural mutation refreshes use trailing debounce during continuous Reading-view virtualization.
+- Wave rendering updates only ticks inside the dynamic radius while resetting ticks that leave it.
+
+### Automated gate
+
+- Focused cache, controller, view, and motion regression tests passed before the full release gate.
+- `npm run check` passed with 16 test files and 129 tests, followed by ESLint, TypeScript, the production esbuild bundle, `node --check main.js`, version consistency, and `git diff --check`.
+
 ## v0.3.26 Inline Markdown stripping in dense outline
 
 Verified on 2026-08-07 in the ALL vault.

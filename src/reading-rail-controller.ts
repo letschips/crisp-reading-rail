@@ -387,8 +387,11 @@ export class ReadingRailController {
   }
 
   private scheduleStructureRefresh(): void {
-    if (this.destroyed || this.refreshTimer !== null) {
+    if (this.destroyed) {
       return;
+    }
+    if (this.refreshTimer !== null) {
+      this.environment.clearTimeout(this.refreshTimer);
     }
     this.refreshTimer = this.environment.setTimeout(() => {
       this.refreshTimer = null;
