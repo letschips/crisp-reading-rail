@@ -19,6 +19,7 @@ import {
   resolveVariableLabelPositions,
 } from "./outline-model";
 import { clamp01, progressFromPointer } from "./progress";
+import { createSemanticMarker } from "./reading-memory";
 import { normalizeWaypoints } from "./settings";
 import type { OutlineEntry, ReadingWaypoint } from "./types";
 import type { OutlineScope } from "./outline-preferences";
@@ -1278,10 +1279,7 @@ export class ReadingRailView {
   private addWaypoint(progress: number): void {
     const next = normalizeWaypoints([
       ...this.waypoints,
-      {
-        progress: clamp01(progress),
-        createdAt: Date.now(),
-      },
+      createSemanticMarker(progress, this.entries, Date.now()),
     ]);
     if (
       next.length === this.waypoints.length

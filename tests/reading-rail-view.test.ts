@@ -30,7 +30,7 @@ function pointerEvent(
   type: string,
   pointerId: number,
   clientY: number,
-  options: { button?: number; isPrimary?: boolean } = {},
+  options: { button?: number; isPrimary?: boolean; pointerType?: string } = {},
 ): MouseEvent {
   const event = new MouseEvent(type, {
     bubbles: true,
@@ -41,6 +41,7 @@ function pointerEvent(
   Object.defineProperties(event, {
     pointerId: { value: pointerId },
     isPrimary: { value: options.isPrimary ?? true },
+    pointerType: { value: options.pointerType ?? "mouse" },
   });
   return event;
 }
@@ -398,7 +399,12 @@ describe("ReadingRailView", () => {
       clientY: 40,
     }));
     expect(onWaypointsChange).toHaveBeenLastCalledWith([
-      expect.objectContaining({ progress: 0.4 }),
+      expect.objectContaining({
+        progress: 0.4,
+        headingText: "Intro",
+        headingLevel: 2,
+        headingSourceLine: 10,
+      }),
     ]);
     const waypointBtn = host.querySelector<HTMLButtonElement>(".crisp-reading-rail__waypoint");
     expect(waypointBtn?.dataset.progress).toBe("0.4");
@@ -750,8 +756,12 @@ describe("ReadingRailView", () => {
     expect(onProgressDrag).toHaveBeenLastCalledWith(0.2);
     expect(onProgressSelect).not.toHaveBeenCalled();
 
-    window.dispatchEvent(pointerEvent("pointermove", 99, 90));
+    window.dispatchEvent(pointerEvent("pointermove", 99, 90, {
+      pointerType: "pen",
+    }));
     expect(onProgressDrag).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(pointerEvent("pointermove", 99, 65));
+    expect(onProgressDrag).toHaveBeenLastCalledWith(0.65);
     window.dispatchEvent(pointerEvent("pointermove", 7, 75));
     expect(onProgressDrag).toHaveBeenLastCalledWith(0.75);
     expect(translateY(orb)).toBe(75);
@@ -952,6 +962,7 @@ describe("ReadingRailView", () => {
     view.refreshAppearance();
     const image = orb.querySelector<HTMLImageElement>("img")!;
     expect(image.src).toMatch(/^data:image\/png;base64,/);
+    expect(image.draggable).toBe(false);
     view.setProgress(0.5);
     expect(image.style.transform).toBe("");
 

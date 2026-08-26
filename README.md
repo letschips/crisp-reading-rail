@@ -2,6 +2,10 @@
 
 Crisp Reading Rail adds a compact reading-progress and heading-navigation rail to the right edge of each eligible Obsidian Markdown Reading view. Its proportional heading marks, orb-centered focus line, animated wave, and optional orbs sit alongside the visual language of Crisp File Explorer without occupying Obsidian's native right sidebar.
 
+## v0.4.1
+
+- Bug fixes.
+
 ## v0.4.0 Reading Memory & Outline Control
 
 - 在本地保存最近 500 篇笔记的上次阅读位置，并在每次打开的阅读会话中显示一个固定菱形标记；点击标记或运行 `Jump to last reading position` 即可返回。
