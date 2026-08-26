@@ -954,6 +954,9 @@ export class ReadingRailView {
       // Pointer capture can be unavailable in synthetic or closing windows.
     }
     this.updateDragProgress(event.clientY);
+    this.orb.addEventListener("pointermove", this.handleDragPointerMove);
+    this.orb.addEventListener("pointerup", this.handleDragPointerUp);
+    this.orb.addEventListener("pointercancel", this.handleDragPointerUp);
     this.window.addEventListener("pointermove", this.handleDragPointerMove, {
       passive: false,
     });
@@ -967,7 +970,10 @@ export class ReadingRailView {
   };
 
   private readonly handleDragPointerMove = (event: PointerEvent): void => {
-    if (event.pointerId !== this.dragPointerId) {
+    if (
+      this.dragPointerId === null
+      || (event.pointerId !== this.dragPointerId && event.pointerType !== "mouse")
+    ) {
       return;
     }
     event.preventDefault();
@@ -976,7 +982,10 @@ export class ReadingRailView {
   };
 
   private readonly handleDragPointerUp = (event: PointerEvent): void => {
-    if (event.pointerId !== this.dragPointerId) {
+    if (
+      this.dragPointerId === null
+      || (event.pointerId !== this.dragPointerId && event.pointerType !== "mouse")
+    ) {
       return;
     }
     event.preventDefault();
@@ -995,6 +1004,9 @@ export class ReadingRailView {
   };
 
   private readonly handleDragBlur = (): void => {
+    if (this.window.document?.hasFocus?.()) {
+      return;
+    }
     const progress = this.currentProgress;
     this.finishDrag();
     this.callbacks.onProgressDragCancel?.(progress);
@@ -1004,6 +1016,9 @@ export class ReadingRailView {
     const bounds = this.track.getBoundingClientRect();
     if (bounds.height <= 0) {
       return null;
+    }
+    if (bounds.height !== this.trackHeight) {
+      this.trackHeight = bounds.height;
     }
     const progress = progressFromPointer(clientY, bounds.top, bounds.height);
     this.updateProgressState(progress);
@@ -1025,6 +1040,9 @@ export class ReadingRailView {
     this.dragPointerId = null;
     this.root.classList.remove("is-dragging");
     this.orb.classList.remove("is-dragging");
+    this.orb.removeEventListener("pointermove", this.handleDragPointerMove);
+    this.orb.removeEventListener("pointerup", this.handleDragPointerUp);
+    this.orb.removeEventListener("pointercancel", this.handleDragPointerUp);
     this.window.removeEventListener("pointermove", this.handleDragPointerMove);
     this.window.removeEventListener("pointerup", this.handleDragPointerUp);
     this.window.removeEventListener("pointercancel", this.handleDragPointerUp);
