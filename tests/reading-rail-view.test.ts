@@ -175,7 +175,7 @@ describe("ReadingRailView", () => {
     expect(onProgressSelect).toHaveBeenCalledWith(0.25, false, false);
   });
 
-  it("reanchors semantic waypoints to their current heading position", () => {
+  it("renders waypoints at their exact progress position without snapping to headings", () => {
     const host = document.createElement("div");
     const view = ReadingRailView.mount(host, {
       onHeadingSelect: vi.fn(),
@@ -190,7 +190,7 @@ describe("ReadingRailView", () => {
     }]);
     expect(host.querySelector<HTMLElement>(
       ".crisp-reading-rail__waypoint",
-    )?.dataset.progress).toBe("0.4");
+    )?.dataset.progress).toBe("0.8");
   });
 
   it("renders one local slider and button labels without global handlers", () => {
@@ -382,6 +382,10 @@ describe("ReadingRailView", () => {
       onProgressSelect,
       onWaypointsChange,
     });
+    view.setOutline([
+      { ...makeEntry(), text: "Intro", sourceLine: 10, progress: 0.2 },
+      { ...makeEntry(), text: "Methods", sourceLine: 50, progress: 0.8 },
+    ], 20);
     const track = host.querySelector<HTMLElement>(".crisp-reading-rail__track")!;
     track.getBoundingClientRect = () => ({
       top: 0, left: 0, right: 30, bottom: 100, width: 30, height: 100,
@@ -396,6 +400,10 @@ describe("ReadingRailView", () => {
     expect(onWaypointsChange).toHaveBeenLastCalledWith([
       expect.objectContaining({ progress: 0.4 }),
     ]);
+    const waypointBtn = host.querySelector<HTMLButtonElement>(".crisp-reading-rail__waypoint");
+    expect(waypointBtn?.dataset.progress).toBe("0.4");
+    waypointBtn?.click();
+    expect(onProgressSelect).toHaveBeenLastCalledWith(0.4, false, false);
 
     view.setProgress(0.65);
     track.dispatchEvent(new KeyboardEvent("keydown", {

@@ -19,10 +19,6 @@ import {
   resolveVariableLabelPositions,
 } from "./outline-model";
 import { clamp01, progressFromPointer } from "./progress";
-import {
-  createSemanticMarker,
-  resolveReadingMarkerProgress,
-} from "./reading-memory";
 import { normalizeWaypoints } from "./settings";
 import type { OutlineEntry, ReadingWaypoint } from "./types";
 import type { OutlineScope } from "./outline-preferences";
@@ -1214,7 +1210,7 @@ export class ReadingRailView {
     const document = this.root.ownerDocument;
     const resolved = this.waypoints.map((waypoint) => ({
       waypoint,
-      progress: resolveReadingMarkerProgress(waypoint, this.entries),
+      progress: clamp01(waypoint.progress),
     }));
     const renderKey = JSON.stringify(resolved);
     if (renderKey === this.lastWaypointRenderKey) {
@@ -1264,7 +1260,10 @@ export class ReadingRailView {
   private addWaypoint(progress: number): void {
     const next = normalizeWaypoints([
       ...this.waypoints,
-      createSemanticMarker(progress, this.entries, Date.now()),
+      {
+        progress: clamp01(progress),
+        createdAt: Date.now(),
+      },
     ]);
     if (
       next.length === this.waypoints.length
