@@ -189,6 +189,27 @@ describe("collectRenderedHeadings", () => {
 });
 
 describe("ReadingRailController", () => {
+  it("sizes the rail from the reading viewport instead of the header-inclusive host", () => {
+    const { host, scroller } = makeFixture();
+    setMetric(host, "clientHeight", 845);
+    const clock = makeEnvironment();
+    const view = makeView();
+    const controller = new ReadingRailController({
+      host,
+      scroller,
+      preview: scroller,
+      getHeadings: () => [],
+      environment: clock.environment,
+      createView: () => view,
+    });
+
+    controller.start();
+    clock.flushFrame();
+
+    expect(view.setOutline).toHaveBeenCalledWith([], 76);
+    controller.destroy();
+  });
+
   it("applies the selected heading depth and per-note disabled preference", () => {
     const { host, scroller } = makeFixture();
     const clock = makeEnvironment();

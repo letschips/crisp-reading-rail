@@ -3,8 +3,8 @@
   --crisp-reading-muted: color-mix(in srgb, var(--text-muted) 48%, transparent);
   --crisp-reading-line-color: var(--text-faint);
   position: absolute;
-  z-index: var(--layer-cover, 5);
-  top: 18px;
+  z-index: 0;
+  top: calc(var(--header-height, 45px) + 18px);
   right: 10px;
   bottom: 18px;
   width: 30px;

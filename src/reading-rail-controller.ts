@@ -291,7 +291,7 @@ export class ReadingRailController {
     }
 
     const maxScroll = Math.max(0, this.scroller.scrollHeight - this.scroller.clientHeight);
-    const trackHeight = Math.max(0, this.host.clientHeight - TRACK_VERTICAL_INSET);
+    const trackHeight = Math.max(0, this.scroller.clientHeight - TRACK_VERTICAL_INSET);
     const preferences = this.getOutlinePreferences();
     const visible = this.host.isConnected
       && this.host.clientWidth >= MIN_PANE_WIDTH

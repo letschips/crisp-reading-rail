@@ -5,6 +5,15 @@ import { describe, expect, it } from "vitest";
 const css = readFileSync(resolve(process.cwd(), "styles.css"), "utf8");
 
 describe("Crisp Reading Rail styles", () => {
+  it("keeps the interactive rail below the native view header", () => {
+    const rootBlock = css.match(/\.crisp-reading-rail\s*\{([^}]*)\}/)?.[1] ?? "";
+
+    expect(rootBlock).toMatch(
+      /top:\s*calc\(var\(--header-height, 45px\) \+ 18px\);/,
+    );
+    expect(rootBlock).toMatch(/z-index:\s*0;/);
+  });
+
   it("uses the companion rail's focus glow and mirrored tick proportions", () => {
     expect(css).toMatch(
       /\.crisp-reading-rail \.crisp-reading-rail__line-focus\s*{[\s\S]*?height: 192px;[\s\S]*?linear-gradient/,
