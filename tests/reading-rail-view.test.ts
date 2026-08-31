@@ -244,6 +244,21 @@ describe("ReadingRailView", () => {
     )).toHaveLength(1);
   });
 
+  it("keeps fine progress ticks visually stable when the note has no outline headings", () => {
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    });
+    view.setOutline([], 12);
+
+    view.setProgress(1);
+    expect(host.querySelectorAll(".crisp-reading-rail__tick.is-read")).toHaveLength(0);
+
+    view.setProgress(0);
+    expect(host.querySelectorAll(".crisp-reading-rail__tick.is-read")).toHaveLength(0);
+  });
+
   it("reuses outline nodes while refreshing positions and click targets", () => {
     const onHeadingSelect = vi.fn();
     const host = document.createElement("div");

@@ -1140,6 +1140,13 @@ export class ReadingRailView {
       this.lastReadTickIndex = -1;
       return;
     }
+    if (this.entries.length === 0) {
+      if (this.lastReadTickIndex >= 0) {
+        this.ticks.forEach((tick) => tick.classList.remove("is-read"));
+      }
+      this.lastReadTickIndex = -1;
+      return;
+    }
     const nextIndex = Math.min(
       this.ticks.length - 1,
       Math.floor(this.currentProgress * (this.ticks.length - 1) + Number.EPSILON),
