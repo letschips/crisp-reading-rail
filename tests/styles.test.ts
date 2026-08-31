@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -83,6 +84,26 @@ describe("Crisp Reading Rail styles", () => {
     expect(css).toMatch(
       /\.crisp-reading-rail \.crisp-reading-rail__label\s*{[\s\S]*?transition:\s*opacity 120ms cubic-bezier\(0\.23, 1, 0\.32, 1\),\s*transform 120ms cubic-bezier\(0\.23, 1, 0\.32, 1\);/,
     );
+  });
+
+  it("starts wrapped dense labels on a new left-aligned line", () => {
+    const styleElement = document.createElement("style");
+    styleElement.textContent = css;
+    const root = document.createElement("div");
+    root.className = "crisp-reading-rail is-dense";
+    const label = document.createElement("button");
+    label.className = "crisp-reading-rail__label";
+    label.textContent = "04. A long heading that wraps onto another line";
+    root.append(label);
+    document.head.append(styleElement);
+    document.body.append(root);
+
+    const computed = getComputedStyle(label);
+
+    expect(computed.display).toBe("block");
+    expect(computed.textAlign).toBe("left");
+    styleElement.remove();
+    root.remove();
   });
 
   it("uses compositor-safe settings groups without animated layout properties", () => {

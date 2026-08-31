@@ -483,12 +483,14 @@ body .crisp-reading-rail-native-scrollbar::-webkit-scrollbar {
 .crisp-reading-rail.is-dense .crisp-reading-rail__label {
   position: static;
   top: auto;
+  display: block;
   min-height: 22px;
   padding: 3px 8px;
   padding-right: calc(var(--crisp-reading-level) * 8px + 8px);
   border-radius: 6px;
   -webkit-line-clamp: unset;
   overflow-wrap: anywhere;
+  text-align: left;
   transform: none;
 }
 
