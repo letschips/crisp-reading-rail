@@ -61,7 +61,7 @@ describe("Crisp Reading Rail styles", () => {
     expect(transparentBlock?.[1]).toMatch(/background:\s*transparent/);
     expect(transparentBlock?.[1]).toMatch(/box-shadow:\s*none/);
     expect(transparentBlock?.[1]).not.toMatch(/background:\s*#fff/);
-    for (const style of ["angry", "squint", "facemask", "pokerface", "captainshield", "batman", "superman", "spiderman"]) {
+    for (const style of ["angry", "squint", "facemask", "pokerface", "captainshield", "batman", "superman", "spiderman", "dizzy", "vinyl"]) {
       expect(css).toMatch(new RegExp(`data-orb-style="${style}"\\]`));
     }
   });

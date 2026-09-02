@@ -39,6 +39,8 @@ export const RANDOM_DAILY_ORB_STYLES = [
   "batman",
   "superman",
   "spiderman",
+  "dizzy",
+  "vinyl",
 ] as const;
 
 export type MaterialOrbStyle = (typeof RANDOM_DAILY_ORB_STYLES)[number];
@@ -91,6 +93,8 @@ export const ORB_STYLE_OPTIONS: ReadonlyArray<{
   { value: "batman", label: "Batman" },
   { value: "superman", label: "Superman" },
   { value: "spiderman", label: "Spider-Man" },
+  { value: "dizzy", label: "Dizzy Emoji" },
+  { value: "vinyl", label: "Vinyl" },
 ];
 
 export const INLINE_ORB_SVGS: Partial<Record<MaterialOrbStyle, string>> =

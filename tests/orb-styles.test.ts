@@ -20,20 +20,22 @@ describe("orb styles", () => {
   });
 
   it("exposes the complete approved setting menu", () => {
-    expect(ORB_STYLE_OPTIONS).toHaveLength(38);
+    expect(ORB_STYLE_OPTIONS).toHaveLength(40);
     expect(ORB_STYLE_OPTIONS[0]).toEqual({
       value: "followFileExplorer",
       label: "跟随 Crisp File Explorer",
     });
     expect(ORB_STYLE_OPTIONS[ORB_STYLE_OPTIONS.length - 1]).toEqual({
-      value: "spiderman",
-      label: "Spider-Man",
+      value: "vinyl",
+      label: "Vinyl",
     });
     expect(ORB_STYLE_OPTIONS).toContainEqual({ value: "taiga", label: "Taiga" });
+    expect(ORB_STYLE_OPTIONS).toContainEqual({ value: "dizzy", label: "Dizzy Emoji" });
+    expect(ORB_STYLE_OPTIONS).toContainEqual({ value: "vinyl", label: "Vinyl" });
   });
 
   it("maps every material style to inline SVG or an owned asset", () => {
-    expect(RANDOM_DAILY_ORB_STYLES).toHaveLength(35);
+    expect(RANDOM_DAILY_ORB_STYLES).toHaveLength(37);
 
     for (const style of RANDOM_DAILY_ORB_STYLES) {
       expect(Boolean(INLINE_ORB_SVGS[style] ?? ORB_IMAGE_DATA_URLS[style]))
@@ -68,7 +70,7 @@ describe("orb styles", () => {
     for (const style of ["snorlax", "pikachu", "snorlaxface", "batman", "superman", "spiderman", "character4", "character5"] as const) {
       expect(STATIC_ORB_STYLES.has(style)).toBe(true);
     }
-    for (const style of ["soccer", "basketball", "tennis", "shutup", "pokeball", "bracelet", "angry", "squint", "facemask", "pokerface", "captainshield"] as const) {
+    for (const style of ["soccer", "basketball", "tennis", "shutup", "pokeball", "bracelet", "angry", "squint", "facemask", "pokerface", "captainshield", "dizzy", "vinyl"] as const) {
       expect(STATIC_ORB_STYLES.has(style)).toBe(false);
     }
   });
