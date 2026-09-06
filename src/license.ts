@@ -26,7 +26,7 @@ export interface LicenseVerificationCache {
   clear(): void;
 }
 
-const WORKER_VERIFY_URL = "https://crisp-license.helloherve-xsn.workers.dev/api/verify-device";
+const WORKER_VERIFY_URL = "https://license.letschips.xyz/api/verify-device";
 const LICENSE_CACHE_TTL_MS = 15 * 60 * 1000;
 
 // Crisp 5合1全家桶通用 Ed25519 嵌入公钥
@@ -197,17 +197,22 @@ async function verifyLicenseCodeUncached(
 
     try {
       const deviceId = getDeviceId();
-      const res = await requestUrl({
-        url: WORKER_VERIFY_URL,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          licenseCode: trimmed,
-          deviceId: deviceId,
-          action: "activate",
-          pluginId: targetPluginId
-        })
-      });
+      const res = await Promise.race([
+        requestUrl({
+          url: WORKER_VERIFY_URL,
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            licenseCode: trimmed,
+            deviceId: deviceId,
+            action: "activate",
+            pluginId: targetPluginId
+          })
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Crisp license check timeout")), 2500)
+        )
+      ]);
 
       const cloudResult = res.json as { valid?: boolean; reason?: string; message?: string };
       if (cloudResult && typeof cloudResult.valid === "boolean") {
