@@ -164,4 +164,4 @@ The plugin does not support Live Preview, Source mode, mobile layouts, native Ou
 
 ## License
 
-MIT
+Crisp Proprietary License © 2026 letschips. See [LICENSE](LICENSE).
