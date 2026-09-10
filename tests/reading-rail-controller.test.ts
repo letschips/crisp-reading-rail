@@ -7,6 +7,7 @@ import {
   type RailView,
 } from "../src/reading-rail-controller";
 import type { RailViewCallbacks } from "../src/reading-rail-view";
+import type { OutlineEntry } from "../src/types";
 
 function setMetric(element: HTMLElement, key: string, value: number): void {
   Object.defineProperty(element, key, { configurable: true, value });
@@ -779,6 +780,59 @@ describe("ReadingRailController", () => {
     view.callbacks?.onHeadingSelect({ ...outline[0] });
     clock.flushFrames([1000, 2000, 2016, 2032]);
     expect(scroller.scrollTop).toBe(500);
+    controller.destroy();
+  });
+
+  it("holds a heading's measured progress while Obsidian stops rendering it", () => {
+    const { host, scroller } = makeFixture();
+    const first = document.createElement("h2");
+    first.textContent = "First";
+    first.getBoundingClientRect = () => ({
+      top: 700 - scroller.scrollTop,
+      left: 0,
+      right: 0,
+      bottom: 720 - scroller.scrollTop,
+      width: 0,
+      height: 20,
+      x: 0,
+      y: 700 - scroller.scrollTop,
+      toJSON: () => ({}),
+    });
+    scroller.append(first);
+    const clock = makeEnvironment();
+    const view = makeView();
+    const controller = new ReadingRailController({
+      host,
+      scroller,
+      preview: scroller,
+      getHeadings: () => [
+        { text: "First", level: 2, sourceLine: 3 },
+        { text: "Second", level: 2, sourceLine: 11 },
+      ],
+      getLineCount: () => 12,
+      environment: clock.environment,
+      createView: (_host, callbacks) => {
+        view.callbacks = callbacks;
+        return view;
+      },
+    });
+    controller.start();
+    clock.flushFrame();
+    const outline = (): readonly OutlineEntry[] => {
+      const calls = vi.mocked(view.setOutline).mock.calls;
+      const latest = calls[calls.length - 1];
+      return latest ? latest[0] : [];
+    };
+    expect(outline().map((entry) => [entry.text, Number(entry.progress.toFixed(3))]))
+      .toEqual([["First", 0.7], ["Second", 1]]);
+
+    // Obsidian drops distant headings from the DOM; the rail must not fall back to the
+    // source-line estimate, which would slide the label to a different spot.
+    first.remove();
+    controller.refresh();
+
+    expect(outline().map((entry) => [entry.text, Number(entry.progress.toFixed(3))]))
+      .toEqual([["First", 0.7], ["Second", 1]]);
     controller.destroy();
   });
 

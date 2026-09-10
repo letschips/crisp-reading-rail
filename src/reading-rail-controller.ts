@@ -198,6 +198,8 @@ export class ReadingRailController {
   private observedHostWidth = 0;
   private observedHostHeight = 0;
   private observedScrollerHeight = 0;
+  private readonly measuredDocumentY = new Map<number, number>();
+  private measuredOutlineSignature = "";
   private pendingHeadingLine: number | null = null;
   private pendingHeadingAnchor: number | null = null;
   private activeHeadingIndex = -1;
@@ -317,15 +319,35 @@ export class ReadingRailController {
       RIGHT_ANNOTATION_AVOIDANCE_CLASS,
       this.preview.querySelector(".crisp-ann-margin-item--right") !== null,
     );
+    const headings = this.getHeadings().filter(
+      (heading) => heading.level <= preferences.maxLevel,
+    );
+    // Remembered heading positions are only meaningful while the outline is unchanged;
+    // a different file, an edited heading or a reflow invalidates them.
+    const outlineSignature = headings.map((heading) => (
+      `${heading.sourceLine}:${heading.level}:${heading.text}`
+    )).join("|");
+    if (outlineSignature !== this.measuredOutlineSignature) {
+      this.measuredOutlineSignature = outlineSignature;
+      this.measuredDocumentY.clear();
+    }
     const rendered = collectRenderedHeadings(this.preview)
       .filter((heading) => heading.level <= preferences.maxLevel);
     const unresolvedEntries = buildOutlineEntries(
-      this.getHeadings().filter((heading) => heading.level <= preferences.maxLevel),
+      headings,
       rendered,
       0,
       maxScroll,
       this.getLineCount(),
+      this.measuredDocumentY,
     );
+    // Obsidian only keeps part of a long document rendered, so store what this pass
+    // could measure for the passes where that heading is out of the render window.
+    for (const entry of unresolvedEntries) {
+      if (entry.target) {
+        this.measuredDocumentY.set(entry.sourceLine, entry.documentY);
+      }
+    }
     this.entries = resolveLabelPositions(
       unresolvedEntries,
       trackHeight,
@@ -390,6 +412,8 @@ export class ReadingRailController {
     this.view = null;
     this.entries = [];
     this.clearPendingHeading();
+    this.measuredDocumentY.clear();
+    this.measuredOutlineSignature = "";
     this.activeHeadingIndex = -1;
     this.dragProgress = null;
     this.lastDragHeadingIndex = null;
@@ -450,9 +474,11 @@ export class ReadingRailController {
     this.observedScrollerHeight = scrollerHeight;
 
     if (heightChanged || crossedVisibilityThreshold) {
+      this.measuredDocumentY.clear();
       this.cancelResizeRefresh();
       this.scheduleFrame(true);
     } else if (widthChanged) {
+      this.measuredDocumentY.clear();
       this.scheduleResizeRefresh();
     }
   };

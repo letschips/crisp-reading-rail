@@ -53,6 +53,49 @@ describe("outline model", () => {
     ]);
   });
 
+  it("interpolates between measured anchors instead of trusting the line ratio", () => {
+    const deepHeadings = [
+      { text: "A", level: 2, sourceLine: 3 },
+      { text: "B", level: 2, sourceLine: 9 },
+      { text: "C", level: 2, sourceLine: 15 },
+      { text: "D", level: 2, sourceLine: 21 },
+    ];
+    const rendered = [
+      { text: "A", level: 2, documentY: 100, target: {} as HTMLElement },
+      { text: "D", level: 2, documentY: 1000, target: {} as HTMLElement },
+    ];
+
+    const result = buildOutlineEntries(deepHeadings, rendered, 0, 1000, 24);
+
+    // B and C sit between two real anchors, so they are interpolated rather than
+    // estimated from their source line (which would scatter them off the outline).
+    expect(result.map((entry) => entry.progress)).toEqual([0.1, 0.4, 0.7, 1]);
+    expect(result.map((entry) => entry.target !== null)).toEqual([
+      true,
+      false,
+      false,
+      true,
+    ]);
+  });
+
+  it("keeps a remembered position once a heading leaves the render window", () => {
+    const deepHeadings = [
+      { text: "A", level: 2, sourceLine: 3 },
+      { text: "B", level: 2, sourceLine: 9 },
+      { text: "C", level: 2, sourceLine: 15 },
+    ];
+    const remembered = new Map([[15, 900]]);
+
+    // No heading is rendered at all in this pass, so only the memory can place C.
+    const result = buildOutlineEntries(deepHeadings, [], 0, 1000, 24, remembered);
+
+    expect(result[2].progress).toBeCloseTo(0.9, 5);
+    expect(result[2].documentY).toBe(900);
+    // A and B have no anchor below them, so they still fall back to the source-line ratio.
+    expect(result[0].progress).toBeCloseTo(3 / 23, 5);
+    expect(result[1].progress).toBeCloseTo(9 / 23, 5);
+  });
+
   it("preserves order while separating colliding labels", () => {
     const entries = [
       { text: "A", level: 2, sourceLine: 1, documentY: 10, progress: 0.1, labelY: 0, target: {} as HTMLElement },

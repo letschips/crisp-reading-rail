@@ -14,6 +14,7 @@ export function buildOutlineEntries(
   contentTop: number,
   maxScroll: number,
   sourceLineCount?: number,
+  knownDocumentY?: ReadonlyMap<number, number>,
 ): OutlineEntry[] {
   const eligible = headings.filter(
     (heading) => heading.level >= MIN_LEVEL && heading.level <= MAX_LEVEL,
@@ -24,7 +25,7 @@ export function buildOutlineEntries(
   if (virtualized) {
     const lastSourceLine = sourceLineCount - 1;
     let renderedIndex = 0;
-    return eligible.map((source) => {
+    const matched = eligible.map((source) => {
       const candidate = rendered[renderedIndex];
       const target = candidate
         && candidate.text === source.text
@@ -34,18 +35,33 @@ export function buildOutlineEntries(
       if (target) {
         renderedIndex += 1;
       }
-      const estimatedProgress = clamp01(source.sourceLine / lastSourceLine);
-      const progress = target && maxScroll > 0
-        ? clamp01((candidate.documentY - contentTop) / maxScroll)
-        : estimatedProgress;
       return {
-        ...source,
-        documentY: target
-          ? candidate.documentY
-          : contentTop + progress * maxScroll,
-        progress,
-        labelY: 0,
+        source,
         target,
+        documentY: target ? candidate.documentY : null,
+      };
+    });
+    const positions = resolveVirtualizedDocumentY(matched, knownDocumentY);
+    return matched.map((entry, index) => {
+      const measured = positions[index];
+      if (measured === null) {
+        // Nothing has ever been seen on screen for this heading, so the source-line
+        // ratio is the only signal left.
+        const progress = clamp01(entry.source.sourceLine / lastSourceLine);
+        return {
+          ...entry.source,
+          documentY: contentTop + progress * maxScroll,
+          progress,
+          labelY: 0,
+          target: entry.target,
+        };
+      }
+      return {
+        ...entry.source,
+        documentY: measured,
+        progress: maxScroll > 0 ? clamp01((measured - contentTop) / maxScroll) : 0,
+        labelY: 0,
+        target: entry.target,
       };
     });
   }
@@ -71,6 +87,65 @@ export function buildOutlineEntries(
   }
 
   return entries;
+}
+
+/**
+ * Where to draw a heading Obsidian is not currently rendering. A remembered measurement
+ * always wins; between two remembered anchors a linear interpolation is close enough to
+ * keep the outline in order. Headings with no anchor on either side stay null, and the
+ * caller falls back to the source-line ratio for those.
+ *
+ * Without this, every heading flips between its measured position and the ratio estimate
+ * as the render window moves, so the labels visibly slide around while the reader scrolls.
+ */
+function resolveVirtualizedDocumentY(
+  matched: readonly { source: OutlineHeading; documentY: number | null }[],
+  knownDocumentY?: ReadonlyMap<number, number>,
+): Array<number | null> {
+  const positions = matched.map((entry) => {
+    if (entry.documentY !== null) {
+      return entry.documentY;
+    }
+    const remembered = knownDocumentY?.get(entry.source.sourceLine);
+    return remembered === undefined ? null : remembered;
+  });
+
+  for (let index = 0; index < positions.length; index += 1) {
+    if (positions[index] !== null) {
+      continue;
+    }
+    let lower = -1;
+    for (let scan = index - 1; scan >= 0; scan -= 1) {
+      if (positions[scan] !== null) {
+        lower = scan;
+        break;
+      }
+    }
+    let upper = -1;
+    for (let scan = index + 1; scan < positions.length; scan += 1) {
+      if (positions[scan] !== null) {
+        upper = scan;
+        break;
+      }
+    }
+    if (lower < 0 || upper < 0) {
+      continue;
+    }
+    const lowerY = positions[lower];
+    const upperY = positions[upper];
+    if (lowerY === null || upperY === null) {
+      continue;
+    }
+    const lowerLine = matched[lower].source.sourceLine;
+    const upperLine = matched[upper].source.sourceLine;
+    const span = upperLine - lowerLine;
+    const ratio = span === 0
+      ? 0
+      : (matched[index].source.sourceLine - lowerLine) / span;
+    positions[index] = lowerY + (upperY - lowerY) * ratio;
+  }
+
+  return positions;
 }
 
 export function resolveLabelPositions(
