@@ -736,6 +736,52 @@ describe("ReadingRailController", () => {
     controller.destroy();
   });
 
+  it("lands on a displaced label's anchor instead of the rendered heading position", () => {
+    const { host, scroller } = makeFixture();
+    const heading = document.createElement("h2");
+    heading.textContent = "Dense";
+    heading.getBoundingClientRect = () => ({
+      top: 500 - scroller.scrollTop,
+      left: 0,
+      right: 0,
+      bottom: 520 - scroller.scrollTop,
+      width: 0,
+      height: 20,
+      x: 0,
+      y: 500 - scroller.scrollTop,
+      toJSON: () => ({}),
+    });
+    scroller.append(heading);
+    const clock = makeEnvironment();
+    const view = makeView();
+    const controller = new ReadingRailController({
+      host,
+      scroller,
+      preview: scroller,
+      getHeadings: () => [{ text: "Dense", level: 2, sourceLine: 0 }],
+      getLineCount: () => 20,
+      environment: clock.environment,
+      createView: (_host, callbacks) => {
+        view.callbacks = callbacks;
+        return view;
+      },
+    });
+    controller.start();
+    clock.flushFrame();
+    const outline = vi.mocked(view.setOutline).mock.calls[0][0];
+    expect(outline[0].progress).toBeCloseTo(0.5, 5);
+
+    // maxScroll is 1000 here, so the heading sits at 500 while its label sits at 620.
+    view.callbacks?.onHeadingSelect({ ...outline[0], labelProgress: 0.62 });
+    clock.flushFrames([0, 1000, 1016, 1032]);
+    expect(scroller.scrollTop).toBe(620);
+
+    view.callbacks?.onHeadingSelect({ ...outline[0] });
+    clock.flushFrames([1000, 2000, 2016, 2032]);
+    expect(scroller.scrollTop).toBe(500);
+    controller.destroy();
+  });
+
   it("corrects a virtualized heading jump after its target renders", () => {
     const { host, scroller } = makeFixture();
     const clock = makeEnvironment();

@@ -115,6 +115,27 @@ describe("Crisp Reading Rail styles", () => {
     );
   });
 
+  it("keeps the label column clear of the tick sweep and the progress readout", () => {
+    const labelsBlock = css.match(
+      /\.crisp-reading-rail \.crisp-reading-rail__labels\s*\{([^}]*)\}/,
+    )?.[1] ?? "";
+    const gutter = Number(
+      labelsBlock.match(/inset:\s*0\s+(\d+)px\s+0\s+auto;/)?.[1] ?? Number.NaN,
+    );
+    // WAVE_AMPLITUDE (19.6px) plus a level-2 heading tick is the widest sweep, and the
+    // readout reaches furthest left of all painted elements at its 38px inset.
+    expect(css).toMatch(
+      /\.crisp-reading-rail \.crisp-reading-rail__progress\s*\{[^}]*right:\s*38px;/,
+    );
+    expect(gutter).toBeGreaterThanOrEqual(68);
+  });
+
+  it("snaps a whole-column read-tick jump without per-tick transitions", () => {
+    expect(css).toMatch(
+      /\.crisp-reading-rail \.crisp-reading-rail__ticks\.is-read-snap \.crisp-reading-rail__tick\s*{\s*transition:\s*none;/,
+    );
+  });
+
   it("keeps waypoint hover restrained and limited to hover-capable pointers", () => {
     expect(css).toMatch(
       /\.crisp-reading-rail__waypoint\s*{[\s\S]*?top:\s*calc\(var\(--crisp-reading-waypoint-progress\) \* 100%\);/,

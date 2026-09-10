@@ -64,6 +64,7 @@ interface RegistryOptions {
 interface ControllerRecord extends PaneElements {
   view: MarkdownView;
   controller: ControllerLike;
+  selected: boolean;
 }
 
 interface TabGroupLike {
@@ -171,9 +172,6 @@ export class ReadingPaneRegistry {
     const eligible = new Set<WorkspaceLeaf>();
 
     this.context.workspace.iterateAllLeaves((leaf) => {
-      if (!isSelectedTabLeaf(leaf)) {
-        return;
-      }
       const view = leaf.view;
       if (!this.isMarkdownView(view) || view.getMode() !== "preview") {
         return;
@@ -184,12 +182,21 @@ export class ReadingPaneRegistry {
       }
       eligible.add(leaf);
 
+      // Tab selection must not mount or unmount the rail. Obsidian flips the outgoing
+      // leaf to display:none on every tab switch; tearing the rail down at that moment
+      // invalidates the pane's translucent backing layer and flashes the whole window.
+      // Keep the node mounted and let visibility refresh handle the swap.
+      const selected = isSelectedTabLeaf(leaf);
       const existing = this.controllers.get(leaf);
       if (existing
         && existing.view === view
         && existing.host === elements.host
         && existing.scroller === elements.scroller
         && existing.preview === elements.preview) {
+        if (existing.selected !== selected) {
+          existing.selected = selected;
+          existing.controller.refresh();
+        }
         return;
       }
       existing?.controller.destroy();
@@ -230,7 +237,7 @@ export class ReadingPaneRegistry {
           );
         },
       });
-      this.controllers.set(leaf, { ...elements, view, controller });
+      this.controllers.set(leaf, { ...elements, view, controller, selected });
       controller.start();
     });
 

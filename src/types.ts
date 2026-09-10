@@ -16,6 +16,12 @@ export interface OutlineEntry extends OutlineHeading {
   progress: number;
   labelY: number;
   target: HTMLElement | null;
+  /**
+   * Set by the view when collision avoidance had to move this entry's label away from
+   * its own heading. Navigation follows the label so the orb lands under the label the
+   * reader actually clicked; entries that sit on their heading leave this undefined.
+   */
+  labelProgress?: number;
 }
 
 export interface ReadingWaypoint {

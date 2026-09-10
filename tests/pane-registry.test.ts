@@ -18,7 +18,7 @@ function makeController() {
 }
 
 describe("ReadingPaneRegistry", () => {
-  it("mounts a controller only for the selected leaf in each tab group", () => {
+  it("keeps a mounted rail alive when its leaf stops being the selected tab", () => {
     const views = ["one.md", "two.md"].map((path) => ({
       file: { path },
       getMode: () => "preview" as const,
@@ -50,13 +50,73 @@ describe("ReadingPaneRegistry", () => {
     );
 
     registry.reconcile();
-    expect(factory).toHaveBeenCalledTimes(1);
     expect(controllers[0].start).toHaveBeenCalledTimes(1);
+    expect(controllers[1].start).toHaveBeenCalledTimes(1);
+    controllers[0].refresh.mockClear();
+    controllers[1].refresh.mockClear();
 
     tabGroup.currentTab = 1;
     registry.reconcile();
+
+    expect(controllers[0].destroy).not.toHaveBeenCalled();
+    expect(controllers[1].destroy).not.toHaveBeenCalled();
+    expect(factory).toHaveBeenCalledTimes(2);
+    expect(controllers[0].refresh).toHaveBeenCalledTimes(1);
+    expect(controllers[1].refresh).toHaveBeenCalledTimes(1);
+
+    registry.reconcile();
+    expect(controllers[0].refresh).toHaveBeenCalledTimes(1);
+    expect(controllers[1].refresh).toHaveBeenCalledTimes(1);
+
+    registry.destroy();
     expect(controllers[0].destroy).toHaveBeenCalledTimes(1);
+    expect(controllers[1].destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("destroys a mounted rail only when its leaf leaves the eligible set", () => {
+    let mode: "preview" | "source" = "preview";
+    const views = [
+      { file: { path: "one.md" }, getMode: () => mode },
+      { file: { path: "two.md" }, getMode: () => "preview" as const },
+    ];
+    const leaves = views.map((view) => ({ view })) as unknown as WorkspaceLeaf[];
+    const tabGroup = {
+      type: "tabs",
+      children: leaves,
+      currentTab: 0,
+    };
+    for (const leaf of leaves) {
+      Object.assign(leaf, { parent: tabGroup });
+    }
+    const controllers = [makeController(), makeController()];
+    const factory = vi.fn()
+      .mockReturnValueOnce(controllers[0])
+      .mockReturnValueOnce(controllers[1]);
+    const host = document.createElement("div");
+    const registry = new ReadingPaneRegistry(
+      {
+        workspace: { iterateAllLeaves: (callback) => leaves.forEach(callback) },
+        metadataCache: { getFileCache: () => ({ headings: [] }) },
+      },
+      {
+        isMarkdownView: (view: View): view is MarkdownView => "getMode" in view,
+        resolveElements: () => ({ host, scroller: host, preview: host }),
+        createController: factory,
+      },
+    );
+
+    registry.reconcile();
+    expect(factory).toHaveBeenCalledTimes(2);
+    expect(controllers[0].start).toHaveBeenCalledTimes(1);
     expect(controllers[1].start).toHaveBeenCalledTimes(1);
+
+    mode = "source";
+    registry.reconcile();
+    expect(controllers[0].destroy).toHaveBeenCalledTimes(1);
+    expect(controllers[1].destroy).not.toHaveBeenCalled();
+
+    registry.reconcile();
+    expect(factory).toHaveBeenCalledTimes(2);
     registry.destroy();
   });
 

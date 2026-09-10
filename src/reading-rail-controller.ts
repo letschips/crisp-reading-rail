@@ -87,6 +87,16 @@ function checkSettled(
     || state.finalFrames >= NAVIGATION_MAX_FINAL_FRAMES;
 }
 
+/**
+ * The label position a click should land on, when the view had to move that label away
+ * from its own heading. Returns null for labels that still mark the heading itself.
+ */
+function resolveLabelAnchor(entry: OutlineEntry): number | null {
+  return typeof entry.labelProgress === "number" && Number.isFinite(entry.labelProgress)
+    ? clamp01(entry.labelProgress)
+    : null;
+}
+
 export interface RailControllerEnvironment {
   requestAnimationFrame(callback: FrameRequestCallback): number;
   cancelAnimationFrame(id: number): void;
@@ -189,6 +199,7 @@ export class ReadingRailController {
   private observedHostHeight = 0;
   private observedScrollerHeight = 0;
   private pendingHeadingLine: number | null = null;
+  private pendingHeadingAnchor: number | null = null;
   private activeHeadingIndex = -1;
   private needsMeasurement = false;
   private started = false;
@@ -378,7 +389,7 @@ export class ReadingRailController {
     this.view?.destroy();
     this.view = null;
     this.entries = [];
-    this.pendingHeadingLine = null;
+    this.clearPendingHeading();
     this.activeHeadingIndex = -1;
     this.dragProgress = null;
     this.lastDragHeadingIndex = null;
@@ -414,7 +425,7 @@ export class ReadingRailController {
   }
 
   private readonly handleManualNavigation = (): void => {
-    this.pendingHeadingLine = null;
+    this.clearPendingHeading();
     this.dragProgress = null;
     this.lastDragHeadingIndex = null;
     this.cancelNavigation();
@@ -527,12 +538,15 @@ export class ReadingRailController {
     animated = true,
   ): void {
     const fallbackProgress = clamp01(entry.progress);
+    const anchor = resolveLabelAnchor(entry);
     this.pendingHeadingLine = entry.target?.isConnected ? null : entry.sourceLine;
+    this.pendingHeadingAnchor = this.pendingHeadingLine === null ? null : anchor;
     if (audible) {
       this.sound?.settle(this.window);
     }
     this.startNavigation(() => this.getHeadingNavigationTop(
-      entry.sourceLine,
+      entry,
+      anchor,
       fallbackProgress,
     ), animated);
   }
@@ -542,7 +556,7 @@ export class ReadingRailController {
     audible = false,
     animated = true,
   ): void {
-    this.pendingHeadingLine = null;
+    this.clearPendingHeading();
     const safeProgress = clamp01(progress);
     if (audible) {
       this.sound?.settle(this.window);
@@ -551,7 +565,7 @@ export class ReadingRailController {
   }
 
   private dragToProgress(progress: number): void {
-    this.pendingHeadingLine = null;
+    this.clearPendingHeading();
     this.dragProgress = clamp01(progress);
     const headingIndex = this.headingIndexAtProgress(this.dragProgress);
     if (
@@ -578,7 +592,7 @@ export class ReadingRailController {
   }
 
   private finishDraggedProgress(progress: number, audible: boolean): void {
-    this.pendingHeadingLine = null;
+    this.clearPendingHeading();
     this.dragProgress = null;
     this.lastDragHeadingIndex = null;
     this.cancelNavigation();
@@ -628,6 +642,7 @@ export class ReadingRailController {
     if (this.pendingHeadingLine === null) {
       return;
     }
+    const anchor = this.pendingHeadingAnchor;
     const entry = this.entries.find((candidate) => (
       candidate.sourceLine === this.pendingHeadingLine
       && candidate.target?.isConnected
@@ -635,13 +650,19 @@ export class ReadingRailController {
     if (!entry?.target) {
       return;
     }
-    this.pendingHeadingLine = null;
+    this.clearPendingHeading();
     if (!this.navigation) {
       this.startNavigation(() => this.getHeadingNavigationTop(
-        entry.sourceLine,
+        entry,
+        anchor,
         clamp01(entry.progress),
       ));
     }
+  }
+
+  private clearPendingHeading(): void {
+    this.pendingHeadingLine = null;
+    this.pendingHeadingAnchor = null;
   }
 
   private getRenderedHeadingTop(target: HTMLElement): number {
@@ -655,8 +676,19 @@ export class ReadingRailController {
     return progress * maxScroll;
   }
 
-  private getHeadingNavigationTop(sourceLine: number, fallbackProgress: number): number {
-    const current = this.entries.find((entry) => entry.sourceLine === sourceLine);
+  private getHeadingNavigationTop(
+    entry: OutlineEntry,
+    anchorProgress: number | null,
+    fallbackProgress: number,
+  ): number {
+    // A label that collision avoidance pushed away from its own heading is the thing the
+    // reader pointed at, so land the orb on it rather than on the heading position.
+    if (anchorProgress !== null) {
+      return this.getProgressTop(anchorProgress);
+    }
+    const current = this.entries.find((candidate) => (
+      candidate.sourceLine === entry.sourceLine
+    ));
     if (current?.target?.isConnected) {
       return this.getRenderedHeadingTop(current.target);
     }

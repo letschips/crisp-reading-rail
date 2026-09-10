@@ -29,6 +29,8 @@ const COLLAPSE_DELAY = 3000;
 const LABEL_GAP = 4;
 const LINE_FOCUS_HEIGHT = 192;
 const ORB_ROTATION_PER_PX = 3.2;
+const READ_TICK_SNAP_STEP = 12;
+const READ_TICK_SNAP_CLASS = "is-read-snap";
 
 function lowerBound(values: readonly number[], target: number): number {
   let low = 0;
@@ -146,6 +148,7 @@ export class ReadingRailView {
   private visible = true;
   private frameId: number | null = null;
   private proximityFrameId: number | null = null;
+  private readSnapFrameId: number | null = null;
   private pendingProximityPoint: { clientX: number; clientY: number } | null = null;
   private lastFrameTimestamp: number | null = null;
   private collapseTimer: number | null = null;
@@ -528,6 +531,7 @@ export class ReadingRailView {
     this.cancelAnimation();
     this.cancelProximityCheck();
     this.cancelCollapse();
+    this.clearReadTickSnap();
     this.followObserver?.disconnect();
     this.followObserver = null;
     if (this.orbImage) {
@@ -593,6 +597,11 @@ export class ReadingRailView {
       this.labels.forEach((label) => {
         label.style.setProperty("--crisp-reading-label-y", "0px");
       });
+      // Dense mode renders the outline as a scrolling list, so no label owns a track
+      // position; navigation falls back to the rendered heading itself.
+      this.entries.forEach((entry) => {
+        delete entry.labelProgress;
+      });
     } else {
       const resolved = resolveVariableLabelPositions(
         this.entries,
@@ -606,9 +615,40 @@ export class ReadingRailView {
           `${resolved[index]?.labelY ?? 0}px`,
         );
       });
+      this.applyLabelAnchors(resolved, labelHeights);
     }
     this.targetPosition = this.currentProgress * this.trackHeight;
     this.needsLabelLayout = false;
+  }
+
+  /**
+   * Remember where each label actually landed so a click can put the orb on it.
+   * Labels that still sit on their own heading keep the exact heading progress, which
+   * leaves "jump puts the heading at the top" untouched; the top and bottom edge clamps
+   * only ever move a label by half its own height, so they stay below the threshold too.
+   * Once collision avoidance has moved a label further than that, the label — not the
+   * heading — is what the reader aimed at, and navigation follows it.
+   */
+  private applyLabelAnchors(
+    resolved: readonly OutlineEntry[],
+    labelHeights: readonly number[],
+  ): void {
+    const trackHeight = this.trackHeight;
+    this.entries.forEach((entry, index) => {
+      const height = labelHeights[index] ?? 0;
+      if (trackHeight <= 0 || height <= 0) {
+        delete entry.labelProgress;
+        return;
+      }
+      const center = (resolved[index]?.labelY ?? 0) + height / 2;
+      const anchor = clamp01(center / trackHeight);
+      const drift = Math.abs(anchor - clamp01(entry.progress)) * trackHeight;
+      if (drift > height / 2) {
+        entry.labelProgress = anchor;
+      } else {
+        delete entry.labelProgress;
+      }
+    });
   }
 
   private scrollLabelIntoView(label: HTMLElement): void {
@@ -1151,6 +1191,16 @@ export class ReadingRailView {
       this.ticks.length - 1,
       Math.floor(this.currentProgress * (this.ticks.length - 1) + Number.EPSILON),
     );
+    // Switching articles, or restoring a saved scroll position, moves the read frontier
+    // across many ticks in a single frame. Fading that whole column at once asks Chromium
+    // to build a layer per tick inside the pane's translucent backing layer, which shows
+    // up as a one-frame full-page flash. Snap those jumps instead of animating them.
+    if (
+      this.lastReadTickIndex !== Number.MIN_SAFE_INTEGER
+      && Math.abs(nextIndex - this.lastReadTickIndex) > READ_TICK_SNAP_STEP
+    ) {
+      this.armReadTickSnap();
+    }
     if (this.lastReadTickIndex === Number.MIN_SAFE_INTEGER) {
       this.ticks.forEach((tick, index) => {
         tick.classList.toggle("is-read", index <= nextIndex);
@@ -1165,6 +1215,25 @@ export class ReadingRailView {
       }
     }
     this.lastReadTickIndex = nextIndex;
+  }
+
+  private armReadTickSnap(): void {
+    this.ticksContainer.classList.add(READ_TICK_SNAP_CLASS);
+    if (this.readSnapFrameId !== null) {
+      return;
+    }
+    this.readSnapFrameId = this.environment.requestAnimationFrame(() => {
+      this.readSnapFrameId = null;
+      this.ticksContainer.classList.remove(READ_TICK_SNAP_CLASS);
+    });
+  }
+
+  private clearReadTickSnap(): void {
+    if (this.readSnapFrameId !== null) {
+      this.environment.cancelAnimationFrame(this.readSnapFrameId);
+      this.readSnapFrameId = null;
+    }
+    this.ticksContainer.classList.remove(READ_TICK_SNAP_CLASS);
   }
 
   private updateLabelBranch(): boolean {

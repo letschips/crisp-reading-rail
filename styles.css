@@ -99,6 +99,13 @@ body .crisp-reading-rail-native-scrollbar::-webkit-scrollbar {
   opacity: 0.14;
 }
 
+/* One article switch or restored scroll position can move the read frontier across the
+   whole column. Snapping that frame keeps Chromium from building a layer per tick,
+   which would rebuild the pane's translucent backing layer and flash the window. */
+.crisp-reading-rail .crisp-reading-rail__ticks.is-read-snap .crisp-reading-rail__tick {
+  transition: none;
+}
+
 .crisp-reading-rail .crisp-reading-rail__heading-ticks {
   position: absolute;
   inset: 0;
@@ -409,9 +416,14 @@ body .crisp-reading-rail-native-scrollbar::-webkit-scrollbar {
   opacity: 0.72;
 }
 
+/* The labels own their own column. Everything that moves lives to the right of them:
+   the near-orb ticks sweep left by up to 19.6px (WAVE_AMPLITUDE), the level-2 heading
+   tick is 24px wide at right: 7px, and the numeric readout reaches 60.9px from the rail's
+   right edge. A 38px gutter put the label text inside that band, so ticks and the readout
+   printed straight through level-2 headings. 68px clears the whole band. */
 .crisp-reading-rail .crisp-reading-rail__labels {
   position: absolute;
-  inset: 0 38px 0 auto;
+  inset: 0 68px 0 auto;
   width: min(240px, 30vw);
   pointer-events: none;
 }
