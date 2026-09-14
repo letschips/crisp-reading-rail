@@ -78,6 +78,8 @@ describe("Crisp Reading Rail styles", () => {
     expect(staticBlock?.[0]).toMatch(/data-orb-style="character6"/);
     expect(staticBlock?.[0]).toMatch(/data-orb-style="character7"/);
     expect(staticBlock?.[0]).toMatch(/data-orb-style="character8"/);
+    expect(staticBlock?.[0]).toMatch(/data-orb-style="character9"/);
+    expect(staticBlock?.[0]).toMatch(/data-orb-style="character10"/);
   });
 
   it("keeps label motion responsive without sticky touch hover", () => {

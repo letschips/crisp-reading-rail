@@ -348,6 +348,8 @@ body .crisp-reading-rail-native-scrollbar::-webkit-scrollbar {
 .crisp-reading-rail .crisp-reading-rail__orb[data-orb-style="character6"],
 .crisp-reading-rail .crisp-reading-rail__orb[data-orb-style="character7"],
 .crisp-reading-rail .crisp-reading-rail__orb[data-orb-style="character8"],
+.crisp-reading-rail .crisp-reading-rail__orb[data-orb-style="character9"],
+.crisp-reading-rail .crisp-reading-rail__orb[data-orb-style="character10"],
 .crisp-reading-rail .crisp-reading-rail__orb[data-orb-style="spiderman"] {
   width: 24px;
   height: 24px;
