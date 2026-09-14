@@ -103,6 +103,31 @@ afterEach(() => {
 });
 
 describe("ReadingRailView", () => {
+  it("reveals every visible label across a bounded graceful stagger", () => {
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    });
+    view.setOutline(Array.from({ length: 8 }, (_, index) => ({
+      ...makeEntry(),
+      text: `Heading ${index}`,
+      progress: index / 7,
+    })), 40);
+    view.setOutlineScope("all");
+
+    const delays = [...host.querySelectorAll<HTMLElement>(
+      ".crisp-reading-rail__label",
+    )].map((label) => Number.parseFloat(
+      label.style.getPropertyValue("--crisp-reading-reveal-delay"),
+    ));
+
+    expect(delays).toHaveLength(8);
+    expect(delays[0]).toBe(0);
+    expect(delays[1] - delays[0]).toBeCloseTo(240 / 7, 5);
+    expect(delays[delays.length - 1]).toBeCloseTo(240, 5);
+  });
+
   it("shows only the active H2 branch labels in current-H2 scope", () => {
     const host = document.createElement("div");
     const view = ReadingRailView.mount(host, {

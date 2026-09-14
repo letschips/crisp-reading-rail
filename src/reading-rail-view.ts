@@ -1245,6 +1245,7 @@ export class ReadingRailView {
       this.labels.forEach((label) => {
         label.hidden = false;
       });
+      this.updateLabelRevealDelays();
       return true;
     }
     let branchStart = -1;
@@ -1271,7 +1272,17 @@ export class ReadingRailView {
     this.labels.forEach((label, index) => {
       label.hidden = branchStart < 0 || index < branchStart || index >= branchEnd;
     });
+    this.updateLabelRevealDelays();
     return true;
+  }
+
+  private updateLabelRevealDelays(): void {
+    const visible = this.labels.filter((label) => !label.hidden);
+    // Keep long outlines graceful but bounded, and restart each visible branch at the first note.
+    const step = Math.min(36, 240 / Math.max(1, visible.length - 1));
+    visible.forEach((label, index) => {
+      label.style.setProperty("--crisp-reading-reveal-delay", `${index * step}ms`);
+    });
   }
 
   private updateProgressState(progress: number): void {

@@ -20,7 +20,7 @@ describe("orb styles", () => {
   });
 
   it("exposes the complete approved setting menu", () => {
-    expect(ORB_STYLE_OPTIONS).toHaveLength(40);
+    expect(ORB_STYLE_OPTIONS).toHaveLength(43);
     expect(ORB_STYLE_OPTIONS[0]).toEqual({
       value: "followFileExplorer",
       label: "跟随 Crisp File Explorer",
@@ -32,10 +32,13 @@ describe("orb styles", () => {
     expect(ORB_STYLE_OPTIONS).toContainEqual({ value: "taiga", label: "Taiga" });
     expect(ORB_STYLE_OPTIONS).toContainEqual({ value: "dizzy", label: "Dizzy Emoji" });
     expect(ORB_STYLE_OPTIONS).toContainEqual({ value: "vinyl", label: "Vinyl" });
+    expect(ORB_STYLE_OPTIONS).toContainEqual({ value: "character6", label: "Character 6 (Labubu Chucky)" });
+    expect(ORB_STYLE_OPTIONS).toContainEqual({ value: "character7", label: "Character 7 (Hello Kitty)" });
+    expect(ORB_STYLE_OPTIONS).toContainEqual({ value: "character8", label: "Character 8 (Stitch)" });
   });
 
   it("maps every material style to inline SVG or an owned asset", () => {
-    expect(RANDOM_DAILY_ORB_STYLES).toHaveLength(37);
+    expect(RANDOM_DAILY_ORB_STYLES).toHaveLength(40);
 
     for (const style of RANDOM_DAILY_ORB_STYLES) {
       expect(Boolean(INLINE_ORB_SVGS[style] ?? ORB_IMAGE_DATA_URLS[style]))
@@ -49,6 +52,9 @@ describe("orb styles", () => {
         "character3",
         "character4",
         "character5",
+        "character6",
+        "character7",
+        "character8",
         "snorlax",
         "pikachu",
         "snorlaxface",
@@ -67,7 +73,7 @@ describe("orb styles", () => {
     });
     expect(ORB_IMAGE_DATA_URLS.character1?.length).toBeGreaterThan(1000);
 
-    for (const style of ["snorlax", "pikachu", "snorlaxface", "batman", "superman", "spiderman", "character4", "character5"] as const) {
+    for (const style of ["snorlax", "pikachu", "snorlaxface", "batman", "superman", "spiderman", "character4", "character5", "character6", "character7", "character8"] as const) {
       expect(STATIC_ORB_STYLES.has(style)).toBe(true);
     }
     for (const style of ["soccer", "basketball", "tennis", "shutup", "pokeball", "bracelet", "angry", "squint", "facemask", "pokerface", "captainshield", "dizzy", "vinyl"] as const) {

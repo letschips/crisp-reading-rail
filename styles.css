@@ -345,6 +345,9 @@ body .crisp-reading-rail-native-scrollbar::-webkit-scrollbar {
 .crisp-reading-rail .crisp-reading-rail__orb[data-orb-style="superman"],
 .crisp-reading-rail .crisp-reading-rail__orb[data-orb-style="character4"],
 .crisp-reading-rail .crisp-reading-rail__orb[data-orb-style="character5"],
+.crisp-reading-rail .crisp-reading-rail__orb[data-orb-style="character6"],
+.crisp-reading-rail .crisp-reading-rail__orb[data-orb-style="character7"],
+.crisp-reading-rail .crisp-reading-rail__orb[data-orb-style="character8"],
 .crisp-reading-rail .crisp-reading-rail__orb[data-orb-style="spiderman"] {
   width: 24px;
   height: 24px;
@@ -456,7 +459,7 @@ body .crisp-reading-rail-native-scrollbar::-webkit-scrollbar {
   pointer-events: none;
   text-align: right;
   text-overflow: ellipsis;
-  transform: translateX(calc(var(--crisp-reading-level) * -8px + 5px));
+  transform: translateX(calc(var(--crisp-reading-level) * -8px + 10px)) translateY(-3px);
   transition:
     opacity 120ms cubic-bezier(0.23, 1, 0.32, 1),
     transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
@@ -470,6 +473,8 @@ body .crisp-reading-rail-native-scrollbar::-webkit-scrollbar {
   opacity: 0.92;
   pointer-events: auto;
   transform: translateX(calc(var(--crisp-reading-level) * -8px));
+  transition-duration: 260ms, 360ms;
+  transition-delay: var(--crisp-reading-reveal-delay, 0ms);
 }
 
 .crisp-reading-rail .crisp-reading-rail__label:hover,
@@ -505,7 +510,17 @@ body .crisp-reading-rail-native-scrollbar::-webkit-scrollbar {
   -webkit-line-clamp: unset;
   overflow-wrap: anywhere;
   text-align: left;
+  transform: translateY(-3px);
+}
+
+.crisp-reading-rail.is-dense.is-expanded .crisp-reading-rail__label,
+.crisp-reading-rail.is-dense:focus-within .crisp-reading-rail__label {
   transform: none;
+}
+
+/* Keyboard navigation should expose its target immediately. */
+.crisp-reading-rail:focus-within .crisp-reading-rail__label {
+  transition-delay: 0ms;
 }
 
 .crisp-reading-rail.is-dense .crisp-reading-rail__label:hover,

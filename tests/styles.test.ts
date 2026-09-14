@@ -75,6 +75,9 @@ describe("Crisp Reading Rail styles", () => {
     expect(staticBlock?.[1]).toMatch(/height:\s*24px/);
     expect(staticBlock?.[0]).toMatch(/data-orb-style="character4"/);
     expect(staticBlock?.[0]).toMatch(/data-orb-style="character5"/);
+    expect(staticBlock?.[0]).toMatch(/data-orb-style="character6"/);
+    expect(staticBlock?.[0]).toMatch(/data-orb-style="character7"/);
+    expect(staticBlock?.[0]).toMatch(/data-orb-style="character8"/);
   });
 
   it("keeps label motion responsive without sticky touch hover", () => {
@@ -84,6 +87,7 @@ describe("Crisp Reading Rail styles", () => {
     expect(css).toMatch(
       /\.crisp-reading-rail \.crisp-reading-rail__label\s*{[\s\S]*?transition:\s*opacity 120ms cubic-bezier\(0\.23, 1, 0\.32, 1\),\s*transform 120ms cubic-bezier\(0\.23, 1, 0\.32, 1\);/,
     );
+    expect(css).toMatch(/transition-duration:\s*260ms,\s*360ms;/);
   });
 
   it("starts wrapped dense labels on a new left-aligned line", () => {
