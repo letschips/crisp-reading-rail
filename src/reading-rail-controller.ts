@@ -204,6 +204,8 @@ export class ReadingRailController {
   private pendingHeadingAnchor: number | null = null;
   private activeHeadingIndex = -1;
   private needsMeasurement = false;
+  private needsSelectionUpdate = false;
+  private selected = true;
   private started = false;
   private destroyed = false;
 
@@ -295,25 +297,36 @@ export class ReadingRailController {
       this.scheduleStructureRefresh();
     });
     this.mutationObserver.observe(this.preview, { childList: true, subtree: true });
-    this.scheduleFrame(true);
+    if (this.selected) {
+      this.scheduleFrame(true);
+    } else {
+      this.needsMeasurement = true;
+      this.view.setVisible(false);
+    }
   }
 
-  refresh(): void {
+  refresh(selected?: boolean): void {
+    if (selected !== undefined) {
+      this.selected = selected;
+    }
     if (!this.started || this.destroyed || !this.view) {
       return;
     }
+    if (!this.selected) {
+      this.needsMeasurement = true;
+      this.view.setVisible(false);
+      return;
+    }
+    this.needsSelectionUpdate = false;
 
     const maxScroll = Math.max(0, this.scroller.scrollHeight - this.scroller.clientHeight);
     const trackHeight = Math.max(0, this.scroller.clientHeight - TRACK_VERTICAL_INSET);
     const preferences = this.getOutlinePreferences();
-    const visible = this.host.isConnected
-      && this.host.clientWidth >= MIN_PANE_WIDTH
-      && maxScroll > 0
-      && trackHeight > 0
-      && preferences.enabled;
-    this.scroller.classList.toggle(
-      NATIVE_SCROLLBAR_CLASS,
-      this.host.isConnected && maxScroll > 0 && !visible,
+    const visible = this.updateVisibility(
+      this.selected,
+      maxScroll,
+      trackHeight,
+      preferences.enabled,
     );
     this.host.classList.toggle(
       RIGHT_ANNOTATION_AVOIDANCE_CLASS,
@@ -369,6 +382,47 @@ export class ReadingRailController {
     this.view.setVisible(visible);
     this.updateScrollState();
     this.finishPendingHeadingNavigation();
+  }
+
+  setSelected(selected: boolean): void {
+    if (this.selected === selected) {
+      return;
+    }
+    this.selected = selected;
+    if (!this.started || this.destroyed || !this.view) {
+      return;
+    }
+    if (!selected) {
+      this.needsSelectionUpdate = false;
+      if (this.frameId !== null) {
+        this.environment.cancelAnimationFrame(this.frameId);
+        this.frameId = null;
+      }
+      this.view.setVisible(false);
+      return;
+    }
+    this.needsSelectionUpdate = true;
+    this.scheduleFrame(false);
+  }
+
+  private updateVisibility(
+    selected: boolean,
+    maxScroll: number,
+    trackHeight: number,
+    outlineEnabled: boolean,
+  ): boolean {
+    const visible = selected
+      && this.host.isConnected
+      && this.host.clientWidth >= MIN_PANE_WIDTH
+      && maxScroll > 0
+      && trackHeight > 0
+      && outlineEnabled;
+    this.scroller.classList.toggle(
+      NATIVE_SCROLLBAR_CLASS,
+      this.host.isConnected && maxScroll > 0 && !visible,
+    );
+    this.view?.setVisible(visible);
+    return visible;
   }
 
   refreshAppearance(): void {
@@ -457,6 +511,9 @@ export class ReadingRailController {
   };
 
   private readonly handleResize = (): void => {
+    if (!this.selected) {
+      return;
+    }
     const hostWidth = this.host.clientWidth;
     const hostHeight = this.host.clientHeight;
     const scrollerHeight = this.scroller.clientHeight;
@@ -488,7 +545,7 @@ export class ReadingRailController {
       return;
     }
     this.needsMeasurement ||= needsMeasurement;
-    if (this.frameId !== null) {
+    if (!this.selected || this.frameId !== null) {
       return;
     }
     this.frameId = this.environment.requestAnimationFrame(() => {
@@ -498,7 +555,11 @@ export class ReadingRailController {
       }
       if (this.needsMeasurement) {
         this.needsMeasurement = false;
+        this.needsSelectionUpdate = false;
         this.refresh();
+      } else if (this.needsSelectionUpdate) {
+        this.needsSelectionUpdate = false;
+        this.refreshSelectedState();
       } else {
         this.updateScrollState();
       }
@@ -556,6 +617,36 @@ export class ReadingRailController {
       HEADING_ACTIVATION_OFFSET,
     );
     this.view.setActiveHeading(this.activeHeadingIndex);
+  }
+
+  private refreshSelectedState(): void {
+    if (!this.selected || !this.view || this.destroyed) {
+      return;
+    }
+    const hostWidth = this.host.clientWidth;
+    const hostHeight = this.host.clientHeight;
+    const scrollerHeight = this.scroller.clientHeight;
+    const dimensionsChanged = hostWidth !== this.observedHostWidth
+      || hostHeight !== this.observedHostHeight
+      || scrollerHeight !== this.observedScrollerHeight;
+    if (dimensionsChanged) {
+      this.observedHostWidth = hostWidth;
+      this.observedHostHeight = hostHeight;
+      this.observedScrollerHeight = scrollerHeight;
+      this.measuredDocumentY.clear();
+      this.needsMeasurement = false;
+      this.refresh();
+      return;
+    }
+
+    const maxScroll = Math.max(0, this.scroller.scrollHeight - this.scroller.clientHeight);
+    const trackHeight = Math.max(0, this.scroller.clientHeight - TRACK_VERTICAL_INSET);
+    const preferences = this.getOutlinePreferences();
+    const visible = this.updateVisibility(true, maxScroll, trackHeight, preferences.enabled);
+    if (visible) {
+      this.updateScrollState();
+      this.finishPendingHeadingNavigation();
+    }
   }
 
   private navigateToHeading(

@@ -237,6 +237,125 @@ describe("ReadingRailController", () => {
     controller.destroy();
   });
 
+  it("updates selection visibility without rebuilding the outline", () => {
+    const { host, scroller } = makeFixture();
+    const clock = makeEnvironment();
+    const view = makeView();
+    const getHeadings = vi.fn(() => [
+      { text: "Section", level: 2, sourceLine: 2 },
+    ]);
+    const controller = new ReadingRailController({
+      host,
+      scroller,
+      preview: scroller,
+      getHeadings,
+      getLineCount: () => 10,
+      environment: clock.environment,
+      createView: () => view,
+    });
+    controller.start();
+    clock.flushFrame();
+    expect(view.visible).toBe(true);
+    expect(view.setOutline).toHaveBeenCalledTimes(1);
+    getHeadings.mockClear();
+
+    const setSelected = (
+      controller as unknown as { setSelected?(selected: boolean): void }
+    ).setSelected;
+    expect(setSelected).toBeTypeOf("function");
+
+    setSelected!.call(controller, false);
+    expect(view.visible).toBe(false);
+    expect(getHeadings).not.toHaveBeenCalled();
+
+    setSelected!.call(controller, true);
+    expect(view.visible).toBe(false);
+    clock.flushFrame();
+    expect(view.visible).toBe(true);
+    expect(getHeadings).not.toHaveBeenCalled();
+    expect(view.setOutline).toHaveBeenCalledTimes(1);
+    controller.destroy();
+  });
+
+  it("defers initial outline construction for a tab that starts hidden", () => {
+    const { host, scroller } = makeFixture();
+    const clock = makeEnvironment();
+    const view = makeView();
+    const getHeadings = vi.fn(() => [
+      { text: "Section", level: 2, sourceLine: 2 },
+    ]);
+    const controller = new ReadingRailController({
+      host,
+      scroller,
+      preview: scroller,
+      getHeadings,
+      getLineCount: () => 10,
+      environment: clock.environment,
+      createView: () => view,
+    });
+
+    controller.setSelected(false);
+    controller.start();
+    expect(clock.frameRequests).toBe(0);
+    expect(getHeadings).not.toHaveBeenCalled();
+    expect(view.setOutline).not.toHaveBeenCalled();
+    expect(view.visible).toBe(false);
+
+    controller.setSelected(true);
+    expect(clock.frameRequests).toBe(1);
+    expect(getHeadings).not.toHaveBeenCalled();
+    clock.flushFrame();
+    expect(getHeadings).toHaveBeenCalledTimes(1);
+    expect(view.setOutline).toHaveBeenCalledTimes(1);
+    expect(view.visible).toBe(true);
+    controller.destroy();
+  });
+
+  it("defers hidden-tab resize work until the pane is selected again", () => {
+    const { host, scroller } = makeFixture();
+    const clock = makeEnvironment();
+    const view = makeView();
+    const getHeadings = vi.fn(() => [
+      { text: "Section", level: 2, sourceLine: 2 },
+    ]);
+    const controller = new ReadingRailController({
+      host,
+      scroller,
+      preview: scroller,
+      getHeadings,
+      getLineCount: () => 10,
+      environment: clock.environment,
+      createView: () => view,
+    });
+    controller.start();
+    clock.flushFrame();
+    getHeadings.mockClear();
+    vi.mocked(view.setOutline).mockClear();
+
+    controller.setSelected(false);
+    setMetric(host, "clientWidth", 0);
+    setMetric(host, "clientHeight", 0);
+    setMetric(scroller, "clientHeight", 0);
+    clock.triggerResize();
+    controller.refresh();
+    clock.flushTimers();
+    clock.flushFrame();
+    expect(getHeadings).not.toHaveBeenCalled();
+    expect(view.setOutline).not.toHaveBeenCalled();
+    expect(view.visible).toBe(false);
+
+    setMetric(host, "clientWidth", 720);
+    setMetric(host, "clientHeight", 720);
+    setMetric(scroller, "clientHeight", 650);
+    controller.setSelected(true);
+    expect(getHeadings).not.toHaveBeenCalled();
+    clock.flushFrame();
+    expect(getHeadings).toHaveBeenCalledTimes(1);
+    expect(view.setOutline).toHaveBeenCalledTimes(1);
+    expect(view.visible).toBe(true);
+    controller.destroy();
+  });
+
   it("shows one reanchored resume marker and debounces reading-memory writes", () => {
     const { host, scroller } = makeFixture();
     const clock = makeEnvironment();

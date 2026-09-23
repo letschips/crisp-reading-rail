@@ -2,9 +2,9 @@
 
 Crisp Reading Rail adds a compact reading-progress and heading-navigation rail to the right edge of each eligible Obsidian Markdown Reading view. Its proportional heading marks, orb-centered focus line, animated wave, and optional orbs sit alongside the visual language of Crisp File Explorer without occupying Obsidian's native right sidebar.
 
-## v0.4.11
+## v0.4.12
 
-- 新增 Character 9、Character 10 两款小球。
+- 优化 bug。
 
 ## v0.4.10
 

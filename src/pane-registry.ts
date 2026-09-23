@@ -23,7 +23,8 @@ export interface ControllerLike {
   jumpHeading(delta: number): void;
   jumpToReadingMemory(): void;
   togglePinnedOutline(): void;
-  refresh(): void;
+  refresh(selected?: boolean): void;
+  setSelected(selected: boolean): void;
   refreshAppearance(): void;
   destroy(): void;
 }
@@ -63,6 +64,7 @@ interface RegistryOptions {
 
 interface ControllerRecord extends PaneElements {
   view: MarkdownView;
+  filePath: string | null;
   controller: ControllerLike;
   selected: boolean;
 }
@@ -82,6 +84,11 @@ function isSelectedTabLeaf(leaf: WorkspaceLeaf): boolean {
     return true;
   }
   return parent.children[parent.currentTab as number] === leaf;
+}
+
+function getTabGroup(leaf: WorkspaceLeaf): TabGroupLike | null {
+  const parent = (leaf as WorkspaceLeaf & { parent?: TabGroupLike }).parent;
+  return parent?.type === "tabs" ? parent : null;
 }
 
 function defaultResolveElements(view: MarkdownView): PaneElements | null {
@@ -109,6 +116,7 @@ export class ReadingPaneRegistry {
   private readonly resolveElements: (view: MarkdownView) => PaneElements | null;
   private readonly createController: (options: ReadingRailControllerOptions) => ControllerLike;
   private readonly controllers = new Map<WorkspaceLeaf, ControllerRecord>();
+  private readonly selectedLeavesByTabGroup = new Map<TabGroupLike, WorkspaceLeaf>();
   private destroyed = false;
 
   constructor(context: RegistryContext, options: RegistryOptions = {}) {
@@ -170,6 +178,7 @@ export class ReadingPaneRegistry {
       return;
     }
     const eligible = new Set<WorkspaceLeaf>();
+    this.selectedLeavesByTabGroup.clear();
 
     this.context.workspace.iterateAllLeaves((leaf) => {
       const view = leaf.view;
@@ -181,21 +190,35 @@ export class ReadingPaneRegistry {
         return;
       }
       eligible.add(leaf);
+      const filePath = view.file?.path ?? null;
 
       // Tab selection must not mount or unmount the rail. Obsidian flips the outgoing
       // leaf to display:none on every tab switch; tearing the rail down at that moment
       // invalidates the pane's translucent backing layer and flashes the whole window.
       // Keep the node mounted and let visibility refresh handle the swap.
       const selected = isSelectedTabLeaf(leaf);
+      const tabGroup = getTabGroup(leaf);
+      if (selected && tabGroup) {
+        this.selectedLeavesByTabGroup.set(tabGroup, leaf);
+      }
       const existing = this.controllers.get(leaf);
       if (existing
         && existing.view === view
         && existing.host === elements.host
         && existing.scroller === elements.scroller
         && existing.preview === elements.preview) {
-        if (existing.selected !== selected) {
+        const fileChanged = existing.filePath !== filePath;
+        const selectionChanged = existing.selected !== selected;
+        if (existing.filePath !== filePath) {
+          existing.filePath = filePath;
+        }
+        if (selectionChanged) {
           existing.selected = selected;
-          existing.controller.refresh();
+        }
+        if (fileChanged) {
+          existing.controller.refresh(selected);
+        } else if (selectionChanged) {
+          existing.controller.setSelected(selected);
         }
         return;
       }
@@ -237,7 +260,16 @@ export class ReadingPaneRegistry {
           );
         },
       });
-      this.controllers.set(leaf, { ...elements, view, controller, selected });
+      this.controllers.set(leaf, {
+        ...elements,
+        view,
+        filePath,
+        controller,
+        selected,
+      });
+      if (!selected) {
+        controller.setSelected(false);
+      }
       controller.start();
     });
 
@@ -249,12 +281,104 @@ export class ReadingPaneRegistry {
     }
   }
 
+  /**
+   * Update tab selection without resolving every Markdown leaf. Full reconciliation
+   * handles layout/file changes; ordinary tab switches only refresh the prior and
+   * next leaf in the changed tab group.
+   *
+   * Returns false when the active Markdown leaf has no current controller so the
+   * caller can schedule a full reconciliation for that unexpected state.
+   */
+  activeLeafChanged(leaf: WorkspaceLeaf | null): boolean {
+    if (this.destroyed || !leaf) {
+      return true;
+    }
+
+    const view = leaf.view;
+    const isEligibleMarkdown = this.isMarkdownView(view) && view.getMode() === "preview";
+    const current = this.controllers.get(leaf);
+    if (isEligibleMarkdown && (!current || current.view !== view)) {
+      return false;
+    }
+    if (!isEligibleMarkdown && current) {
+      return false;
+    }
+
+    const tabGroup = getTabGroup(leaf);
+    if (!tabGroup) {
+      if (current && !current.selected) {
+        current.selected = true;
+        current.controller.setSelected(true);
+      }
+      return true;
+    }
+
+    const previousLeaf = this.selectedLeavesByTabGroup.get(tabGroup);
+    if (previousLeaf === leaf) {
+      return true;
+    }
+
+    if (previousLeaf) {
+      const previous = this.controllers.get(previousLeaf);
+      if (previous?.selected) {
+        previous.selected = false;
+        previous.controller.setSelected(false);
+      }
+    }
+
+    if (!current) {
+      this.selectedLeavesByTabGroup.delete(tabGroup);
+      return true;
+    }
+
+    const selected = isSelectedTabLeaf(leaf);
+    if (current.selected !== selected) {
+      current.selected = selected;
+      current.controller.setSelected(selected);
+    }
+    if (selected) {
+      this.selectedLeavesByTabGroup.set(tabGroup, leaf);
+    } else {
+      this.selectedLeavesByTabGroup.delete(tabGroup);
+    }
+    return true;
+  }
+
+  /**
+   * Refresh an existing pane when Obsidian opens a different file in that leaf.
+   * Selecting an already-open tab emits file-open too, so unchanged paths are a
+   * no-op. Return false only when full reconciliation must create or replace a rail.
+   */
+  activeFileOpened(leaf: WorkspaceLeaf | null): boolean {
+    if (this.destroyed || !leaf) {
+      return true;
+    }
+
+    const view = leaf.view;
+    const isEligibleMarkdown = this.isMarkdownView(view) && view.getMode() === "preview";
+    const current = this.controllers.get(leaf);
+    if (!isEligibleMarkdown) {
+      return !current;
+    }
+    if (!current || current.view !== view) {
+      return false;
+    }
+
+    const filePath = view.file?.path ?? null;
+    if (current.filePath !== filePath) {
+      current.filePath = filePath;
+      current.controller.refresh();
+    }
+    return true;
+  }
+
   refreshFile(file: TFile): void {
     if (this.destroyed) {
       return;
     }
     for (const record of this.controllers.values()) {
       if (record.view.file === file || record.view.file?.path === file.path) {
+        record.filePath = record.view.file?.path ?? null;
         record.controller.refresh();
       }
     }
@@ -287,6 +411,7 @@ export class ReadingPaneRegistry {
       record.controller.destroy();
     }
     this.controllers.clear();
+    this.selectedLeavesByTabGroup.clear();
   }
 
   private jumpActiveHeading(delta: number): void {

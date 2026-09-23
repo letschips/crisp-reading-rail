@@ -168,8 +168,16 @@ export default class CrispReadingRailPlugin extends Plugin {
 
       const scheduleReconcile = (): void => this.scheduleReconcile();
       this.registerEvent(this.app.workspace.on("layout-change", scheduleReconcile));
-      this.registerEvent(this.app.workspace.on("active-leaf-change", scheduleReconcile));
-      this.registerEvent(this.app.workspace.on("file-open", scheduleReconcile));
+      this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => {
+        if (!this.registry?.activeLeafChanged(leaf)) {
+          this.scheduleReconcile();
+        }
+      }));
+      this.registerEvent(this.app.workspace.on("file-open", () => {
+        if (!this.registry?.activeFileOpened(this.app.workspace.activeLeaf)) {
+          this.scheduleReconcile();
+        }
+      }));
       this.registerEvent(this.app.workspace.on("window-open", scheduleReconcile));
       this.registerEvent(this.app.workspace.on("window-close", scheduleReconcile));
       this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {

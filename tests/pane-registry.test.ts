@@ -12,6 +12,7 @@ function makeController() {
     jumpToReadingMemory: vi.fn(),
     togglePinnedOutline: vi.fn(),
     refresh: vi.fn(),
+    setSelected: vi.fn(),
     refreshAppearance: vi.fn(),
     destroy: vi.fn(),
   };
@@ -54,6 +55,8 @@ describe("ReadingPaneRegistry", () => {
     expect(controllers[1].start).toHaveBeenCalledTimes(1);
     controllers[0].refresh.mockClear();
     controllers[1].refresh.mockClear();
+    controllers[0].setSelected.mockClear();
+    controllers[1].setSelected.mockClear();
 
     tabGroup.currentTab = 1;
     registry.reconcile();
@@ -61,16 +64,116 @@ describe("ReadingPaneRegistry", () => {
     expect(controllers[0].destroy).not.toHaveBeenCalled();
     expect(controllers[1].destroy).not.toHaveBeenCalled();
     expect(factory).toHaveBeenCalledTimes(2);
-    expect(controllers[0].refresh).toHaveBeenCalledTimes(1);
-    expect(controllers[1].refresh).toHaveBeenCalledTimes(1);
+    expect(controllers[0].refresh).not.toHaveBeenCalled();
+    expect(controllers[1].refresh).not.toHaveBeenCalled();
+    expect(controllers[0].setSelected).toHaveBeenCalledWith(false);
+    expect(controllers[1].setSelected).toHaveBeenCalledWith(true);
 
     registry.reconcile();
-    expect(controllers[0].refresh).toHaveBeenCalledTimes(1);
-    expect(controllers[1].refresh).toHaveBeenCalledTimes(1);
+    expect(controllers[0].setSelected).toHaveBeenCalledTimes(1);
+    expect(controllers[1].setSelected).toHaveBeenCalledTimes(1);
 
     registry.destroy();
     expect(controllers[0].destroy).toHaveBeenCalledTimes(1);
     expect(controllers[1].destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("updates selection for only the affected tabs without resolving every pane", () => {
+    const views = ["one.md", "two.md"].map((path) => ({
+      file: { path },
+      getMode: () => "preview" as const,
+    }));
+    const otherView = { file: null };
+    const leaves = [
+      ...views.map((view) => ({ view })),
+      { view: otherView },
+    ] as unknown as WorkspaceLeaf[];
+    const tabGroup = {
+      type: "tabs",
+      children: leaves,
+      currentTab: 0,
+    };
+    for (const leaf of leaves) {
+      Object.assign(leaf, { parent: tabGroup });
+    }
+    const controllers = [makeController(), makeController()];
+    const factory = vi.fn()
+      .mockReturnValueOnce(controllers[0])
+      .mockReturnValueOnce(controllers[1]);
+    const resolveElements = vi.fn(() => {
+      const host = document.createElement("div");
+      return { host, scroller: host, preview: host };
+    });
+    const registry = new ReadingPaneRegistry(
+      {
+        workspace: { iterateAllLeaves: (callback) => leaves.forEach(callback) },
+        metadataCache: { getFileCache: () => ({ headings: [] }) },
+      },
+      {
+        isMarkdownView: (view: View): view is MarkdownView => "getMode" in view,
+        resolveElements,
+        createController: factory,
+      },
+    );
+
+    registry.reconcile();
+    resolveElements.mockClear();
+    controllers.forEach((controller) => controller.refresh.mockClear());
+    controllers.forEach((controller) => controller.setSelected.mockClear());
+    const activeLeafChanged = (
+      registry as unknown as {
+        activeLeafChanged(leaf: WorkspaceLeaf | null): boolean;
+      }
+    ).activeLeafChanged;
+    const activeFileOpened = (
+      registry as unknown as {
+        activeFileOpened(leaf: WorkspaceLeaf | null): boolean;
+      }
+    ).activeFileOpened;
+    expect(activeLeafChanged).toBeTypeOf("function");
+    expect(activeFileOpened).toBeTypeOf("function");
+
+    tabGroup.currentTab = 1;
+    expect(activeLeafChanged.call(registry, leaves[1])).toBe(true);
+    expect(resolveElements).not.toHaveBeenCalled();
+    expect(controllers[0].refresh).not.toHaveBeenCalled();
+    expect(controllers[1].refresh).not.toHaveBeenCalled();
+    expect(controllers[0].setSelected).toHaveBeenCalledWith(false);
+    expect(controllers[1].setSelected).toHaveBeenCalledWith(true);
+
+    controllers.forEach((controller) => controller.refresh.mockClear());
+    controllers.forEach((controller) => controller.setSelected.mockClear());
+    expect(activeLeafChanged.call(registry, leaves[1])).toBe(true);
+    expect(resolveElements).not.toHaveBeenCalled();
+    expect(controllers[0].refresh).not.toHaveBeenCalled();
+    expect(controllers[1].refresh).not.toHaveBeenCalled();
+    expect(controllers[0].setSelected).not.toHaveBeenCalled();
+    expect(controllers[1].setSelected).not.toHaveBeenCalled();
+
+    expect(activeFileOpened.call(registry, leaves[1])).toBe(true);
+    expect(resolveElements).not.toHaveBeenCalled();
+    expect(controllers[1].refresh).not.toHaveBeenCalled();
+    expect(controllers[1].setSelected).not.toHaveBeenCalled();
+
+    views[1].file = { path: "two-revised.md" };
+    expect(activeFileOpened.call(registry, leaves[1])).toBe(true);
+    expect(resolveElements).not.toHaveBeenCalled();
+    expect(controllers[1].refresh).toHaveBeenCalledTimes(1);
+    controllers[1].refresh.mockClear();
+    expect(activeFileOpened.call(registry, leaves[1])).toBe(true);
+    expect(controllers[1].refresh).not.toHaveBeenCalled();
+
+    tabGroup.currentTab = 2;
+    expect(activeLeafChanged.call(registry, leaves[2])).toBe(true);
+    expect(resolveElements).not.toHaveBeenCalled();
+    expect(controllers[1].setSelected).toHaveBeenCalledWith(false);
+
+    tabGroup.currentTab = 0;
+    expect(activeLeafChanged.call(registry, leaves[0])).toBe(true);
+    expect(resolveElements).not.toHaveBeenCalled();
+    expect(controllers[0].setSelected).toHaveBeenCalledWith(true);
+
+    registry.destroy();
   });
 
   it("destroys a mounted rail only when its leaf leaves the eligible set", () => {
