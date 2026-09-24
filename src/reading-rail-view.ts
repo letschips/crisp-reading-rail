@@ -1,3 +1,4 @@
+import { Platform } from "obsidian";
 import {
   gaussianWaveOffset,
   isSpringSettled,
@@ -188,6 +189,7 @@ export class ReadingRailView {
     this.root = document.createElement("nav");
     this.root.className = "crisp-reading-rail";
     this.root.setAttribute("aria-label", "Article navigation");
+    this.root.classList.toggle("is-mobile", Platform.isMobile);
 
     this.track = document.createElement("div");
     this.track.className = "crisp-reading-rail__track";
@@ -201,6 +203,11 @@ export class ReadingRailView {
       "aria-description",
       "Click to navigate. Double-click or press M to save a reading waypoint.",
     );
+    if (Platform.isMobile) {
+      this.root.setAttribute("aria-hidden", "true");
+      this.track.removeAttribute("role");
+      this.track.removeAttribute("tabindex");
+    }
 
     this.line = document.createElement("div");
     this.line.className = "crisp-reading-rail__line";

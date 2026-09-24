@@ -132,17 +132,22 @@ function getDeviceId(): string {
  */
 export async function verifyLicenseCode(
   licenseCode: string,
-  targetPluginId: string = "crisp-reading-rail"
+  targetPluginId: string = "crisp-reading-rail",
+  skipOnline: boolean = false,
 ): Promise<LicenseVerifyResult> {
   const trimmed = licenseCode.trim();
+  if (skipOnline) {
+    return verifyLicenseCodeUncached(trimmed, targetPluginId, true);
+  }
   return verificationCache.verify(trimmed, targetPluginId, () => (
-    verifyLicenseCodeUncached(trimmed, targetPluginId)
+    verifyLicenseCodeUncached(trimmed, targetPluginId, false)
   ));
 }
 
 async function verifyLicenseCodeUncached(
   licenseCode: string,
   targetPluginId: string,
+  skipOnline: boolean = false,
 ): Promise<LicenseVerifyResult> {
   const trimmed = licenseCode.trim();
   if (!trimmed) {
@@ -193,6 +198,10 @@ async function verifyLicenseCodeUncached(
 
     if (!isSignatureValid) {
       return { valid: false, reason: "授权签名无效或伪造" };
+    }
+
+    if (skipOnline) {
+      return { valid: true, payload };
     }
 
     try {

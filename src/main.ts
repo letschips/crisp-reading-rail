@@ -121,23 +121,27 @@ export default class CrispReadingRailPlugin extends Plugin {
         const nextStyle = CYCLE_ORB_STYLES[
           (current + 1) % CYCLE_ORB_STYLES.length
         ];
+        this.settings.orbStyle = nextStyle;
+        this.refreshAppearance();
+        new Notice(`Orb style set to: ${this.settings.orbStyle}`);
+
         if (nextStyle !== "soccer") {
           const check = await verifyLicenseCode(
             this.settings.licenseCode,
             "crisp-reading-rail",
+            true,
           );
           if (!check.valid) {
             new Notice(
               "🔒 切换其它小球属于 Crisp 激活用户专属功能（未激活仅可使用默认足球）",
             );
             this.settings.orbStyle = "soccer";
+            this.refreshAppearance();
             await this.saveSettings();
             return;
           }
         }
-        this.settings.orbStyle = nextStyle;
         await this.saveSettings();
-        new Notice(`Orb style set to: ${this.settings.orbStyle}`);
       },
     });
     this.app.workspace.onLayoutReady(() => {
@@ -210,10 +214,14 @@ export default class CrispReadingRailPlugin extends Plugin {
     }
   }
 
-  async saveSettings(): Promise<void> {
-    await this.persistSettings();
+  refreshAppearance(): void {
     this.registry?.refreshAppearance();
+  }
+
+  async saveSettings(): Promise<void> {
+    this.refreshAppearance();
     this.registry?.refreshAll();
+    await this.persistSettings();
   }
 
   private scheduleReconcile(): void {
@@ -380,17 +388,20 @@ class CrispReadingRailSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.orbStyle)
           .onChange(async (value) => {
             const selectedStyle = normalizeOrbStyle(value);
+            this.plugin.settings.orbStyle = selectedStyle;
+            this.plugin.refreshAppearance();
+
             if (selectedStyle !== "soccer") {
-              const check = await verifyLicenseCode(this.plugin.settings.licenseCode, "crisp-reading-rail");
+              const check = await verifyLicenseCode(this.plugin.settings.licenseCode, "crisp-reading-rail", true);
               if (!check.valid) {
                 new Notice("🔒 切换其它小球属于 Crisp 激活用户专属功能（未激活仅可使用默认足球）");
                 this.plugin.settings.orbStyle = "soccer";
+                this.plugin.refreshAppearance();
                 await this.plugin.saveSettings();
                 this.display();
                 return;
               }
             }
-            this.plugin.settings.orbStyle = selectedStyle;
             await this.plugin.saveSettings();
           });
       });

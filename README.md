@@ -71,7 +71,7 @@ Crisp Reading Rail adds a compact reading-progress and heading-navigation rail t
 - Adds `About Crisp Reading Rail` to the bottom of the settings page with the
   plugin's core purpose and the linked author attribution.
 
-- Works in Markdown Reading view on desktop Obsidian.
+- Works in Markdown Reading view on desktop and mobile Obsidian. Mobile shows only the progress-following orb.
 - Defers width-only outline measurements until pane resizing settles, while keeping height changes and the 680 px visibility threshold responsive.
 - Displays Crisp Annotations headings by their annotated target text while excluding annotation notes and directives from the rail label.
 - Displays Markdown links and aliased Obsidian wiki links as their visible heading labels, matching Reading view instead of exposing link syntax or destinations.
@@ -89,7 +89,7 @@ Crisp Reading Rail adds a compact reading-progress and heading-navigation rail t
 - Saved waypoints follow note or folder renames and are removed when their note or parent folder is deleted.
 - Reaching the end of a note plays an optional completion chime and uses a short position-safe celebration that respects reduced-motion preferences.
 - Adds Obsidian commands for next heading, previous heading, navigation-sound toggle, and orb-style cycling without assigning global hotkeys.
-- Hides when the pane is narrower than 680 px or the note does not scroll.
+- On desktop, hides when the pane is narrower than 680 px or the note does not scroll.
 - Restores a narrow native scrollbar when the pane is scrollable but too narrow to show the rail, including themes that globally hide scrollbars.
 - Keeps its heading labels collapsed while Crisp Annotations occupies the right margin, leaving the progress track and orb available without covering notes.
 - Gives every side-by-side Reading pane an independent rail.
@@ -158,11 +158,11 @@ The deployment command copies `main.js`, `manifest.json`, `styles.css`, and the 
 
 Crisp Reading Rail does not collect telemetry, edit notes, change files, or alter the workspace layout. It reads only the metadata and rendered headings for currently open Markdown Reading panes. Reading memory and semantic waypoints stay in the plugin's local `data.json`; reading-memory history is capped at the 500 most recently updated notes.
 
-License validation first verifies the Ed25519 signature locally. When a license is present, activation and premium-feature checks send the license code, an Obsidian device/vault identifier, and the target plugin ID to the Crisp license service to enforce the device limit. Successful or failed results are cached in memory for 15 minutes to avoid repeated requests in the same session. If the service is unreachable, a locally valid signature remains usable through the documented offline fallback.
+License validation checks the Ed25519 signature, product, feature permission, and expiration locally. Activation and full online revalidation send the license code, an Obsidian device/vault identifier, and the target plugin ID to the Crisp license service to enforce the device limit. Orb-style switching uses local validation so an existing valid license can be used offline. Online results are cached in memory for 15 minutes to avoid repeated requests in the same session.
 
 ## Known exclusions
 
-The plugin does not support Live Preview, Source mode, mobile layouts, native Outline replacement, embedded-note headings, or H1/H5/H6 navigation.
+The plugin does not support Live Preview, Source mode, native Outline replacement, embedded-note headings, or H1/H5/H6 navigation. Mobile layouts show only the progress-following orb; outline labels and rail navigation are desktop-only.
 
 ## Development
 

@@ -17,6 +17,31 @@
   display: none;
 }
 
+.crisp-reading-rail.is-mobile {
+  right: 4px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.crisp-reading-rail.is-mobile .crisp-reading-rail__track,
+.crisp-reading-rail.is-mobile .crisp-reading-rail__orb {
+  pointer-events: none;
+}
+
+.crisp-reading-rail.is-mobile .crisp-reading-rail__line,
+.crisp-reading-rail.is-mobile .crisp-reading-rail__ticks,
+.crisp-reading-rail.is-mobile .crisp-reading-rail__heading-ticks,
+.crisp-reading-rail.is-mobile .crisp-reading-rail__active,
+.crisp-reading-rail.is-mobile .crisp-reading-rail__waypoints,
+.crisp-reading-rail.is-mobile .crisp-reading-rail__progress,
+.crisp-reading-rail.is-mobile .crisp-reading-rail__labels {
+  display: none;
+}
+
+.crisp-reading-rail.is-mobile .crisp-reading-rail__orb {
+  cursor: default;
+}
+
 body .crisp-reading-rail-native-scrollbar {
   scrollbar-width: thin !important;
 }

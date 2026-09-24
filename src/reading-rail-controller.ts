@@ -1,3 +1,4 @@
+import { Platform } from "obsidian";
 import { collectRenderedHeadings } from "./heading-source";
 import type { RailSoundProvider } from "./audio-feedback";
 import {
@@ -413,7 +414,7 @@ export class ReadingRailController {
   ): boolean {
     const visible = selected
       && this.host.isConnected
-      && this.host.clientWidth >= MIN_PANE_WIDTH
+      && (Platform.isMobile || this.host.clientWidth >= MIN_PANE_WIDTH)
       && maxScroll > 0
       && trackHeight > 0
       && outlineEnabled;
