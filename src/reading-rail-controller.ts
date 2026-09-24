@@ -39,6 +39,7 @@ const NAVIGATION_SETTLE_TOLERANCE = 0.5;
 const NAVIGATION_STABLE_FRAMES = 2;
 const NAVIGATION_MAX_FINAL_FRAMES = 30;
 const NATIVE_SCROLLBAR_CLASS = "crisp-reading-rail-native-scrollbar";
+const MOBILE_SCROLLBAR_HIDDEN_CLASS = "crisp-reading-rail-mobile-scrollbar-hidden";
 const RIGHT_ANNOTATION_AVOIDANCE_CLASS =
   "crisp-reading-rail-avoid-right-annotations";
 
@@ -422,6 +423,10 @@ export class ReadingRailController {
       NATIVE_SCROLLBAR_CLASS,
       this.host.isConnected && maxScroll > 0 && !visible,
     );
+    this.scroller.classList.toggle(
+      MOBILE_SCROLLBAR_HIDDEN_CLASS,
+      Platform.isMobile && visible,
+    );
     this.view?.setVisible(visible);
     return visible;
   }
@@ -462,6 +467,7 @@ export class ReadingRailController {
     this.resizeObserver = null;
     this.mutationObserver = null;
     this.scroller.classList.remove(NATIVE_SCROLLBAR_CLASS);
+    this.scroller.classList.remove(MOBILE_SCROLLBAR_HIDDEN_CLASS);
     this.host.classList.remove(RIGHT_ANNOTATION_AVOIDANCE_CLASS);
     this.view?.destroy();
     this.view = null;

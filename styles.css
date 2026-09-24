@@ -52,6 +52,16 @@ body .crisp-reading-rail-native-scrollbar::-webkit-scrollbar {
   height: 8px !important;
 }
 
+body .crisp-reading-rail-mobile-scrollbar-hidden {
+  scrollbar-width: none !important;
+}
+
+body .crisp-reading-rail-mobile-scrollbar-hidden::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
 .crisp-reading-rail .crisp-reading-rail__track {
   position: relative;
   width: 100%;

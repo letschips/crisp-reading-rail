@@ -71,7 +71,7 @@ Crisp Reading Rail adds a compact reading-progress and heading-navigation rail t
 - Adds `About Crisp Reading Rail` to the bottom of the settings page with the
   plugin's core purpose and the linked author attribution.
 
-- Works in Markdown Reading view on desktop and mobile Obsidian. Mobile shows only the progress-following orb.
+- Works in Markdown Reading view on desktop and mobile Obsidian. Mobile shows only the progress-following orb and hides the native scrollbar while preserving scrolling.
 - Defers width-only outline measurements until pane resizing settles, while keeping height changes and the 680 px visibility threshold responsive.
 - Displays Crisp Annotations headings by their annotated target text while excluding annotation notes and directives from the rail label.
 - Displays Markdown links and aliased Obsidian wiki links as their visible heading labels, matching Reading view instead of exposing link syntax or destinations.
