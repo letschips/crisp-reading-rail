@@ -39,6 +39,7 @@ interface CompanionPluginRegistry {
       settings?: {
         soundStyle?: unknown;
       };
+      getResolvedSoundStyle?(ownerDocument?: Document): unknown;
     }>;
   };
 }
@@ -74,7 +75,7 @@ export default class CrispReadingRailPlugin extends Plugin {
         createReadingRailAudioEnvironment(window),
         {
           getStyle: () => this.settings.soundStyle,
-          getCompanionStyle: () => this.getCompanionSoundStyle(),
+          getCompanionStyle: (window) => this.getCompanionSoundStyle(window),
           isReleaseEnabled: () => this.settings.releaseSoundEnabled,
         },
       );
@@ -151,6 +152,7 @@ export default class CrispReadingRailPlugin extends Plugin {
       this.registry = new ReadingPaneRegistry(this.app, {
         appearance: {
           getOrbStyle: () => this.settings.orbStyle,
+          getCompanionDocument: () => this.app.workspace.containerEl.ownerDocument,
           getAssetUrl: (path) => this.getAssetUrl(path),
         },
         sound: this.audio ?? undefined,
@@ -300,9 +302,11 @@ export default class CrispReadingRailPlugin extends Plugin {
     return operation;
   }
 
-  private getCompanionSoundStyle(): unknown {
+  private getCompanionSoundStyle(window?: Window): unknown {
     const app = this.app as typeof this.app & CompanionPluginRegistry;
-    return app.plugins?.plugins?.["crisp-file-explorer"]?.settings?.soundStyle;
+    const companion = app.plugins?.plugins?.["crisp-file-explorer"];
+    return companion?.getResolvedSoundStyle?.(window?.document)
+      ?? companion?.settings?.soundStyle;
   }
 }
 

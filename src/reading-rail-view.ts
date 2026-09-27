@@ -79,6 +79,7 @@ export interface RailViewCallbacks {
 export interface RailAppearanceProvider {
   getOrbStyle(): OrbStyleSetting;
   getAssetUrl(path: string): string;
+  getCompanionDocument?(): Document;
 }
 
 export interface RailViewEnvironment {
@@ -508,7 +509,15 @@ export class ReadingRailView {
     this.followObserver?.disconnect();
     this.followObserver = null;
     const setting = this.appearance.getOrbStyle();
-    this.applyOrbStyle(resolveOrbStyle(setting, this.root.ownerDocument));
+    const ownerDocument = this.root.ownerDocument;
+    const companionDocument = this.appearance.getCompanionDocument?.() ?? ownerDocument;
+    const resolveStyle = (): ResolvedOrbStyle => resolveOrbStyle(
+      setting,
+      ownerDocument.querySelector(".crisp-fe-orb[data-orb-style]")
+        ? ownerDocument
+        : companionDocument,
+    );
+    this.applyOrbStyle(resolveStyle());
     if (setting !== "followFileExplorer") {
       return;
     }
@@ -516,17 +525,19 @@ export class ReadingRailView {
       if (this.destroyed || !this.hasCompanionMutation(records)) {
         return;
       }
-      const nextStyle = resolveOrbStyle(setting, this.root.ownerDocument);
+      const nextStyle = resolveStyle();
       if (nextStyle !== this.resolvedOrbStyle) {
         this.applyOrbStyle(nextStyle);
       }
     });
-    this.followObserver.observe(this.root.ownerDocument.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-orb-style"],
-      childList: true,
-      subtree: true,
-    });
+    for (const document of new Set([ownerDocument, companionDocument])) {
+      this.followObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["data-orb-style"],
+        childList: true,
+        subtree: true,
+      });
+    }
   }
 
   destroy(): void {

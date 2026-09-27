@@ -26,7 +26,7 @@ interface ToneOptions {
 
 export interface ReadingRailAudioOptions {
   getStyle?(): ReadingRailSoundStyle;
-  getCompanionStyle?(): unknown;
+  getCompanionStyle?(window?: Window): unknown;
   isReleaseEnabled?(): boolean;
 }
 
@@ -68,7 +68,7 @@ export class ReadingRailAudio implements RailSoundProvider {
   private readonly isEnabled: () => boolean;
   private readonly environment: ReadingRailAudioEnvironment;
   private readonly getStyle: () => ReadingRailSoundStyle;
-  private readonly getCompanionStyle: () => unknown;
+  private readonly getCompanionStyle: (window?: Window) => unknown;
   private readonly isReleaseEnabled: () => boolean;
   private readonly contexts = new WeakMap<Window, AudioContext>();
   private readonly contextsToClose: AudioContext[] = [];
@@ -95,7 +95,7 @@ export class ReadingRailAudio implements RailSoundProvider {
       return;
     }
     this.lastTickAt = now;
-    const style = this.resolveStyle();
+    const style = this.resolveStyle(window);
     if (style === "scale") {
       const safeProgress = Math.min(1, Math.max(0, progress));
       const index = Math.floor(safeProgress * (SCALE_FREQUENCIES.length - 0.01));
@@ -117,7 +117,7 @@ export class ReadingRailAudio implements RailSoundProvider {
     if (!this.isEnabled() || !this.isReleaseEnabled()) {
       return;
     }
-    this.play(this.getSettleTone(this.resolveStyle()), window);
+    this.play(this.getSettleTone(this.resolveStyle(window)), window);
   }
 
   completionChime(window?: Window): void {
@@ -185,10 +185,10 @@ export class ReadingRailAudio implements RailSoundProvider {
     }
   }
 
-  private resolveStyle(): Exclude<ReadingRailSoundStyle, "followFileExplorer"> {
+  private resolveStyle(window?: Window): Exclude<ReadingRailSoundStyle, "followFileExplorer"> {
     const selected = this.getStyle();
     return normalizeResolvedSoundStyle(
-      selected === "followFileExplorer" ? this.getCompanionStyle() : selected,
+      selected === "followFileExplorer" ? this.getCompanionStyle(window) : selected,
     );
   }
 
