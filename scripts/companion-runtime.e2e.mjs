@@ -9,15 +9,18 @@ const code = String.raw`(async () => {
   const previousLeaf = app.workspace.activeLeaf;
   const readingLeaf = app.workspace.getLeavesOfType('markdown')[0];
   if (!readingLeaf) throw new Error('Open a Markdown Reading view before running this probe');
-  const readingPath = readingLeaf.view.getState().file;
-  const priorStat = fe.settings.activity.fileStats[readingPath];
-  const savedStat = priorStat ? {...priorStat} : undefined;
+  const savedReadingMemory = JSON.parse(JSON.stringify(rr.settings.readingMemory));
+  const savedActivity = JSON.parse(JSON.stringify(fe.settings.activity));
   await readingLeaf.loadIfDeferred();
   app.workspace.setActiveLeaf(readingLeaf, {focus:false});
   rr.registry.reconcile();
   const record = [...rr.registry.controllers.values()].find(r => r.controller.view);
   if (!record) throw new Error('Switch a Markdown leaf to Reading view before running this probe');
   const saved = { rrOrb: rr.settings.orbStyle, rrSound: rr.settings.soundStyle, feOrb: fe.settings.orbStyle, feSound: fe.settings.soundStyle, enabled:rr.settings.soundEnabled, release:rr.settings.releaseSoundEnabled, lastTick:rr.audio.lastTickAt };
+  const recordReadingMemory = rr.updateReadingMemory;
+  const recordFileActivity = fe.recordFileActivity;
+  rr.updateReadingMemory = () => {};
+  fe.recordFileActivity = () => {};
   const results = [];
   const check = (name, actual, expected) => results.push({name,actual,expected,pass:actual === expected});
   const flush = () => new Promise(resolve => setTimeout(resolve, 40));
@@ -75,18 +78,25 @@ const code = String.raw`(async () => {
     fe.settings.orbStyle = saved.feOrb; fe.settings.soundStyle = saved.feSound;
     fe.updateOrbStyles(); rr.refreshAppearance();
     if (previousLeaf) app.workspace.setActiveLeaf(previousLeaf, {focus:false});
-    if (savedStat && readingPath) {
-      fe.settings.activity.fileStats[readingPath] = savedStat;
-      await fe.saveSettings();
-    }
+    await new Promise(resolve => setTimeout(resolve, 800));
+    rr.settings.readingMemory = savedReadingMemory;
+    await rr.saveSettings();
+    fe.settings.activity = savedActivity;
+    await fe.saveSettings();
+    await new Promise(resolve => setTimeout(resolve, 300));
+    rr.updateReadingMemory = recordReadingMemory;
+    fe.recordFileActivity = recordFileActivity;
   }
-  return JSON.stringify({results,passed:results.filter(r=>r.pass).length,total:results.length});
+  const runtimeDataRestored = JSON.stringify(rr.settings.readingMemory) === JSON.stringify(savedReadingMemory)
+    && JSON.stringify(fe.settings.activity) === JSON.stringify(savedActivity);
+  return JSON.stringify({results,passed:results.filter(r=>r.pass).length,total:results.length,runtimeDataRestored});
 })()
 `;
 const result = spawnSync("obsidian", [`vault=${process.argv[2] ?? "AI-native Knowledge System"}`, "eval", `code=${code}`], {encoding:"utf8"});
 if (result.error) throw result.error;
 const output = result.stdout.trim().replace(/^=> /, "");
 const report = JSON.parse(output);
+if (!report.runtimeDataRestored) throw new Error("Probe did not fully restore Reading Rail/File Explorer runtime data");
 writeFileSync(process.argv[3] ?? "companion-runtime-result.json", JSON.stringify(report, null, 2) + "\n");
 process.stdout.write(`${report.passed}/${report.total} passed\n`);
 process.exitCode = report.passed === report.total ? 0 : 1;
