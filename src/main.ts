@@ -22,8 +22,11 @@ import type { ReadingMemory, ReadingWaypoint } from "./types";
 import { createAboutCard, createSettingGroup } from "./settings-ui";
 import {
   clearLicenseVerificationCache,
+  describeLicenseStatus,
   verifyLicenseCode,
+  type LicenseVerifyResult,
 } from "./license";
+import { LicenseGate } from "./license-gate";
 import {
   READING_RAIL_SOUND_STYLE_OPTIONS,
   normalizeSoundStyle,
@@ -43,6 +46,9 @@ interface CompanionPluginRegistry {
     }>;
   };
 }
+
+const LICENSE_PLUGIN_ID = "crisp-reading-rail";
+const ABOUT_DESCRIPTION = "用阅读轨道、位置提示与快捷导航，让长文阅读始终知道自己在哪里。";
 
 const CYCLE_ORB_STYLES: readonly OrbStyleSetting[] = [
   "followFileExplorer",
@@ -65,6 +71,77 @@ export default class CrispReadingRailPlugin extends Plugin {
   private reconcileFrame: number | null = null;
   private saveQueue: Promise<void> = Promise.resolve();
   private unloaded = false;
+  private layoutReady = false;
+  private readonly licenseGate = new LicenseGate(
+    () => this.settings.licenseCode,
+    (code, skipOnline) => verifyLicenseCode(code, LICENSE_PLUGIN_ID, skipOnline),
+    (licensed) => this.applyLicensed(licensed),
+  );
+
+  get licensed(): boolean {
+    return this.licenseGate.licensed;
+  }
+
+  async refreshLicense(online = true, notify = false): Promise<LicenseVerifyResult> {
+    const result = await this.licenseGate.refresh(online);
+    if (notify && !result.valid && !this.unloaded) {
+      new Notice(`🔒 Crisp Reading Rail 未激活（${result.reason || "授权码无效"}），请在插件设置中输入授权码`);
+    }
+    return result;
+  }
+
+  private requireLicense(action: () => unknown): void {
+    if (!this.licensed) {
+      new Notice("🔒 Crisp Reading Rail 未激活，请在插件设置中输入授权码");
+      return;
+    }
+    void action();
+  }
+
+  private applyLicensed(licensed: boolean): void {
+    if (!licensed) {
+      this.cancelReconcile();
+      this.registry?.destroy();
+      this.registry = null;
+      return;
+    }
+    if (this.layoutReady && !this.unloaded && !this.registry) {
+      this.createRegistry();
+    }
+  }
+
+  private createRegistry(): void {
+    this.registry = new ReadingPaneRegistry(this.app, {
+      appearance: {
+        getOrbStyle: () => this.settings.orbStyle,
+        getCompanionDocument: () => this.app.workspace.containerEl.ownerDocument,
+        getAssetUrl: (path) => this.getAssetUrl(path),
+      },
+      sound: this.audio ?? undefined,
+      waypoints: {
+        get: (filePath) => this.settings.waypoints[filePath] ?? [],
+        set: (filePath, waypoints) => this.updateWaypoints(filePath, waypoints),
+      },
+      readingMemory: {
+        get: (filePath) => this.settings.readingMemory[filePath] ?? null,
+        set: (filePath, memory) => this.updateReadingMemory(filePath, memory),
+      },
+      outlinePreferences: () => ({
+        enabled: true,
+        maxLevel: this.settings.outlineMaxLevel,
+        scope: this.settings.outlineScope,
+      }),
+    });
+    this.registry.reconcile();
+  }
+
+  private cancelReconcile(): void {
+    const window = this.app.workspace.containerEl.ownerDocument.defaultView;
+    if (this.reconcileFrame !== null && window) {
+      window.cancelAnimationFrame(this.reconcileFrame);
+    }
+    this.reconcileFrame = null;
+  }
 
   async onload(): Promise<void> {
     this.settings = normalizeSettings(await this.loadData());
@@ -84,7 +161,7 @@ export default class CrispReadingRailPlugin extends Plugin {
     this.addCommand({
       id: "toggle-navigation-sound",
       name: "Toggle navigation sound",
-      callback: async () => {
+      callback: () => this.requireLicense(async () => {
         this.settings.soundEnabled = !this.settings.soundEnabled;
         await this.saveSettings();
         new Notice(
@@ -92,32 +169,32 @@ export default class CrispReadingRailPlugin extends Plugin {
             this.settings.soundEnabled ? "enabled" : "muted"
           }`,
         );
-      },
+      }),
     });
     this.addCommand({
       id: "jump-to-last-reading-position",
       name: "Jump to last reading position",
-      callback: () => this.registry?.jumpToLastReadingPosition(),
+      callback: () => this.requireLicense(() => this.registry?.jumpToLastReadingPosition()),
     });
     this.addCommand({
       id: "toggle-pinned-outline",
       name: "Toggle pinned outline",
-      callback: () => this.registry?.togglePinnedOutline(),
+      callback: () => this.requireLicense(() => this.registry?.togglePinnedOutline()),
     });
     this.addCommand({
       id: "jump-to-next-heading",
       name: "Jump to next heading",
-      callback: () => this.registry?.jumpNextHeading(),
+      callback: () => this.requireLicense(() => this.registry?.jumpNextHeading()),
     });
     this.addCommand({
       id: "jump-to-previous-heading",
       name: "Jump to previous heading",
-      callback: () => this.registry?.jumpPreviousHeading(),
+      callback: () => this.requireLicense(() => this.registry?.jumpPreviousHeading()),
     });
     this.addCommand({
       id: "cycle-orb-style",
       name: "Cycle orb style",
-      callback: async () => {
+      callback: () => this.requireLicense(async () => {
         const current = CYCLE_ORB_STYLES.indexOf(this.settings.orbStyle);
         const nextStyle = CYCLE_ORB_STYLES[
           (current + 1) % CYCLE_ORB_STYLES.length
@@ -125,52 +202,17 @@ export default class CrispReadingRailPlugin extends Plugin {
         this.settings.orbStyle = nextStyle;
         this.refreshAppearance();
         new Notice(`Orb style set to: ${this.settings.orbStyle}`);
-
-        if (nextStyle !== "soccer") {
-          const check = await verifyLicenseCode(
-            this.settings.licenseCode,
-            "crisp-reading-rail",
-            true,
-          );
-          if (!check.valid) {
-            new Notice(
-              "🔒 切换其它小球属于 Crisp 激活用户专属功能（未激活仅可使用默认足球）",
-            );
-            this.settings.orbStyle = "soccer";
-            this.refreshAppearance();
-            await this.saveSettings();
-            return;
-          }
-        }
         await this.saveSettings();
-      },
+      }),
     });
     this.app.workspace.onLayoutReady(() => {
       if (this.unloaded) {
         return;
       }
-      this.registry = new ReadingPaneRegistry(this.app, {
-        appearance: {
-          getOrbStyle: () => this.settings.orbStyle,
-          getCompanionDocument: () => this.app.workspace.containerEl.ownerDocument,
-          getAssetUrl: (path) => this.getAssetUrl(path),
-        },
-        sound: this.audio ?? undefined,
-        waypoints: {
-          get: (filePath) => this.settings.waypoints[filePath] ?? [],
-          set: (filePath, waypoints) => this.updateWaypoints(filePath, waypoints),
-        },
-        readingMemory: {
-          get: (filePath) => this.settings.readingMemory[filePath] ?? null,
-          set: (filePath, memory) => this.updateReadingMemory(filePath, memory),
-        },
-        outlinePreferences: () => ({
-          enabled: true,
-          maxLevel: this.settings.outlineMaxLevel,
-          scope: this.settings.outlineScope,
-        }),
+      this.layoutReady = true;
+      void this.refreshLicense(true, true).catch((error) => {
+        console.debug("Crisp Reading Rail license check failed", error);
       });
-      this.registry.reconcile();
 
       const scheduleReconcile = (): void => this.scheduleReconcile();
       this.registerEvent(this.app.workspace.on("layout-change", scheduleReconcile));
@@ -200,11 +242,8 @@ export default class CrispReadingRailPlugin extends Plugin {
 
   onunload(): void {
     this.unloaded = true;
-    const window = this.app.workspace.containerEl.ownerDocument.defaultView;
-    if (this.reconcileFrame !== null && window) {
-      window.cancelAnimationFrame(this.reconcileFrame);
-      this.reconcileFrame = null;
-    }
+    this.licenseGate.cancel();
+    this.cancelReconcile();
     this.registry?.destroy();
     this.registry = null;
     const audio = this.audio;
@@ -227,7 +266,7 @@ export default class CrispReadingRailPlugin extends Plugin {
   }
 
   private scheduleReconcile(): void {
-    if (this.unloaded || this.reconcileFrame !== null) {
+    if (this.unloaded || !this.registry || this.reconcileFrame !== null) {
       return;
     }
     const window = this.app.workspace.containerEl.ownerDocument.defaultView;
@@ -334,19 +373,18 @@ class CrispReadingRailSettingTab extends PluginSettingTab {
       .setDesc("正在验证授权状态...");
 
     if (this.plugin.settings.licenseCode) {
-      void verifyLicenseCode(this.plugin.settings.licenseCode, "crisp-reading-rail").then((verifyRes) => {
-        if (verifyRes.valid && verifyRes.payload) {
-          statusSetting.setDesc(
-            `✅ 已激活（授权给: ${verifyRes.payload.userName}，到期时间: ${verifyRes.payload.expiresAt.split("T")[0]}）`,
-          );
-        } else {
-          statusSetting.setDesc(
-            `❌ 未激活（${verifyRes.reason || "授权码无效"}）`,
-          );
+      const wasLicensed = this.plugin.licensed;
+      this.plugin.refreshLicense(true).then((verifyRes) => {
+        if (wasLicensed !== this.plugin.licensed) {
+          this.display();
+          return;
         }
+        statusSetting.setDesc(describeLicenseStatus(verifyRes));
+      }).catch(() => {
+        statusSetting.setDesc("❌ 未激活（授权状态读取失败，请重新验证）");
       });
     } else {
-      statusSetting.setDesc("❌ 未激活（仅可使用默认足球小球，激活可解锁全套 3D 小球）");
+      statusSetting.setDesc("❌ 未激活（Crisp Reading Rail 需激活后使用，请输入授权码）");
     }
 
     new Setting(licenseGroup)
@@ -359,20 +397,37 @@ class CrispReadingRailSettingTab extends PluginSettingTab {
           clearLicenseVerificationCache();
           this.plugin.settings.licenseCode = value.trim();
           await this.plugin.saveSettings();
+          const wasLicensed = this.plugin.licensed;
+          await this.plugin.refreshLicense(false);
+          if (wasLicensed !== this.plugin.licensed) {
+            this.display();
+          }
         }))
       .addButton((button) => button
         .setButtonText("激活 / 重新验证")
         .setCta()
         .onClick(async () => {
           clearLicenseVerificationCache();
-          const result = await verifyLicenseCode(this.plugin.settings.licenseCode, "crisp-reading-rail");
+          const result = await this.plugin.refreshLicense(true);
           if (result.valid && result.payload) {
-            new Notice(`🎉 Crisp Reading Rail 激活成功！欢迎使用，${result.payload.userName}`);
+            new Notice(result.payload.userName
+              ? `🎉 Crisp Reading Rail 激活成功！欢迎使用，${result.payload.userName}`
+              : "🎉 Crisp Reading Rail 激活成功！");
             this.display();
           } else {
             new Notice(`❌ 激活失败: ${result.reason}`);
+            this.display();
           }
         }));
+
+    if (!this.plugin.licensed) {
+      createAboutCard(
+        containerEl,
+        "Crisp Reading Rail",
+        ABOUT_DESCRIPTION,
+      );
+      return;
+    }
 
     const visualBody = createSettingGroup(
       containerEl,
@@ -394,18 +449,6 @@ class CrispReadingRailSettingTab extends PluginSettingTab {
             const selectedStyle = normalizeOrbStyle(value);
             this.plugin.settings.orbStyle = selectedStyle;
             this.plugin.refreshAppearance();
-
-            if (selectedStyle !== "soccer") {
-              const check = await verifyLicenseCode(this.plugin.settings.licenseCode, "crisp-reading-rail", true);
-              if (!check.valid) {
-                new Notice("🔒 切换其它小球属于 Crisp 激活用户专属功能（未激活仅可使用默认足球）");
-                this.plugin.settings.orbStyle = "soccer";
-                this.plugin.refreshAppearance();
-                await this.plugin.saveSettings();
-                this.display();
-                return;
-              }
-            }
             await this.plugin.saveSettings();
           });
       });
@@ -505,7 +548,7 @@ class CrispReadingRailSettingTab extends PluginSettingTab {
     createAboutCard(
       containerEl,
       "Crisp Reading Rail",
-      "用阅读轨道、位置提示与快捷导航，让长文阅读始终知道自己在哪里。",
+      ABOUT_DESCRIPTION,
     );
   }
 }

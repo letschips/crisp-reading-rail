@@ -1,6 +1,7 @@
 import {
   normalizeResolvedSoundStyle,
   type ReadingRailSoundStyle,
+  type ResolvedSoundStyle,
 } from "./sound-styles";
 
 export interface RailSoundProvider {
@@ -185,16 +186,14 @@ export class ReadingRailAudio implements RailSoundProvider {
     }
   }
 
-  private resolveStyle(window?: Window): Exclude<ReadingRailSoundStyle, "followFileExplorer"> {
+  private resolveStyle(window?: Window): ResolvedSoundStyle {
     const selected = this.getStyle();
     return normalizeResolvedSoundStyle(
       selected === "followFileExplorer" ? this.getCompanionStyle(window) : selected,
     );
   }
 
-  private getTickTone(
-    style: Exclude<ReadingRailSoundStyle, "followFileExplorer" | "scale">,
-  ): ToneOptions {
+  private getTickTone(style: Exclude<ResolvedSoundStyle, "scale">): ToneOptions {
     const tones: Record<typeof style, ToneOptions> = {
       soft: {
         type: "triangle",
@@ -252,13 +251,59 @@ export class ReadingRailAudio implements RailSoundProvider {
         release: 0.035,
         volume: 0.024,
       },
+      bounce: {
+        type: "sine",
+        start: 460,
+        end: 280,
+        duration: 0.028,
+        release: 0.024,
+        volume: 0.028,
+      },
+      thump: {
+        type: "sine",
+        start: 210,
+        end: 120,
+        duration: 0.03,
+        release: 0.03,
+        volume: 0.036,
+      },
+      pop: {
+        type: "sine",
+        start: 620,
+        end: 1180,
+        duration: 0.018,
+        release: 0.016,
+        volume: 0.024,
+      },
+      chime: {
+        type: "sine",
+        start: 1568,
+        end: 1568,
+        duration: 0.03,
+        release: 0.06,
+        volume: 0.016,
+      },
+      spark: {
+        type: "triangle",
+        start: 2400,
+        end: 3400,
+        duration: 0.012,
+        release: 0.014,
+        volume: 0.016,
+      },
+      bell: {
+        type: "sine",
+        start: 1318.51,
+        end: 1318.51,
+        duration: 0.035,
+        release: 0.08,
+        volume: 0.016,
+      },
     };
     return tones[style];
   }
 
-  private getSettleTone(
-    style: Exclude<ReadingRailSoundStyle, "followFileExplorer">,
-  ): ToneOptions {
+  private getSettleTone(style: ResolvedSoundStyle): ToneOptions {
     const tones: Record<typeof style, ToneOptions> = {
       soft: {
         type: "sine",
@@ -323,6 +368,54 @@ export class ReadingRailAudio implements RailSoundProvider {
         duration: 0.08,
         release: 0.05,
         volume: 0.028,
+      },
+      bounce: {
+        type: "sine",
+        start: 380,
+        end: 200,
+        duration: 0.07,
+        release: 0.05,
+        volume: 0.03,
+      },
+      thump: {
+        type: "sine",
+        start: 160,
+        end: 80,
+        duration: 0.08,
+        release: 0.06,
+        volume: 0.04,
+      },
+      pop: {
+        type: "sine",
+        start: 520,
+        end: 1320,
+        duration: 0.05,
+        release: 0.04,
+        volume: 0.026,
+      },
+      chime: {
+        type: "sine",
+        start: 1046.5,
+        end: 1568,
+        duration: 0.07,
+        release: 0.12,
+        volume: 0.02,
+      },
+      spark: {
+        type: "triangle",
+        start: 1800,
+        end: 3200,
+        duration: 0.05,
+        release: 0.04,
+        volume: 0.018,
+      },
+      bell: {
+        type: "sine",
+        start: 987.77,
+        end: 1318.51,
+        duration: 0.08,
+        release: 0.16,
+        volume: 0.02,
       },
     };
     return tones[style];

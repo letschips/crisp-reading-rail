@@ -236,4 +236,21 @@ describe("ReadingRailAudio", () => {
       oscillator.frequency.setValueAtTime.mock.calls[0][0]
     ))).toEqual([659.25, 830.61, 987.77, 1318.51]);
   });
+  it("plays File Explorer's orb-matched voices instead of falling back to soft", () => {
+    const startFrequency = (companion: string, method: "tick" | "settle") => {
+      const fixture = makeAudioContext();
+      const audio = new ReadingRailAudio(() => true, makeEnvironment(fixture, () => 100), {
+        getStyle: () => "followFileExplorer",
+        getCompanionStyle: () => companion,
+      });
+      if (method === "tick") audio.tick(undefined, testWindow);
+      else audio.settle(testWindow);
+      return fixture.oscillators[0].frequency.setValueAtTime.mock.calls[0][0];
+    };
+    for (const voice of ["bounce", "thump", "pop", "chime", "spark", "bell"]) {
+      expect(startFrequency(voice, "tick"), voice).not.toBe(startFrequency("soft", "tick"));
+      expect(startFrequency(voice, "settle"), voice).not.toBe(startFrequency("soft", "settle"));
+    }
+    expect(startFrequency("thump", "tick")).toBe(210);
+  });
 });

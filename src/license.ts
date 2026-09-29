@@ -3,8 +3,8 @@ import { requestUrl } from "obsidian";
 export interface LicensePayload {
   product: string;
   licenseId: string;
-  userName: string;
-  expiresAt: string;
+  userName?: string;
+  expiresAt?: string;
   maxDevices?: number;
   features: string[];
   issuedAt?: string;
@@ -86,6 +86,19 @@ export function createLicenseVerificationCache(
 }
 
 const verificationCache = createLicenseVerificationCache(LICENSE_CACHE_TTL_MS);
+
+export function describeLicenseStatus(result: LicenseVerifyResult | null | undefined): string {
+  if (!result?.valid || !result.payload) {
+    return `❌ 未激活（${result?.reason || "授权码无效"}）`;
+  }
+  const { userName, expiresAt } = result.payload;
+  const details: string[] = [];
+  if (userName) {
+    details.push(`授权给: ${userName}`);
+  }
+  details.push(`到期时间: ${typeof expiresAt === "string" && expiresAt ? expiresAt.split("T")[0] : "长期有效"}`);
+  return `✅ 已激活（${details.join("，")}）`;
+}
 
 export function clearLicenseVerificationCache(): void {
   verificationCache.clear();
