@@ -27,6 +27,7 @@ import {
   type LicenseVerifyResult,
 } from "./license";
 import { LicenseGate } from "./license-gate";
+import { preserveUnreadableData, verifyDataWrite } from "./data-safety";
 import {
   READING_RAIL_SOUND_STYLE_OPTIONS,
   normalizeSoundStyle,
@@ -70,6 +71,8 @@ export default class CrispReadingRailPlugin extends Plugin {
   private audio: ReadingRailAudio | null = null;
   private reconcileFrame: number | null = null;
   private saveQueue: Promise<void> = Promise.resolve();
+  private dataWriteBlocked = false;
+  private saveErrorShown = false;
   private unloaded = false;
   private layoutReady = false;
   private readonly licenseGate = new LicenseGate(
@@ -144,7 +147,9 @@ export default class CrispReadingRailPlugin extends Plugin {
   }
 
   async onload(): Promise<void> {
-    this.settings = normalizeSettings(await this.loadData());
+    const stored: unknown = await this.loadData();
+    if (stored === undefined) await this.handleUnreadableData();
+    this.settings = normalizeSettings(stored);
     const window = this.app.workspace.containerEl.ownerDocument.defaultView;
     if (window) {
       this.audio = new ReadingRailAudio(
@@ -262,7 +267,8 @@ export default class CrispReadingRailPlugin extends Plugin {
   async saveSettings(): Promise<void> {
     this.refreshAppearance();
     this.registry?.refreshAll();
-    await this.persistSettings();
+    // persistSettings() already told the user; a failed save must not break the setting or command.
+    await this.persistSettings().catch((error) => console.debug("Crisp Reading Rail settings save failed", error));
   }
 
   private scheduleReconcile(): void {
@@ -330,11 +336,39 @@ export default class CrispReadingRailPlugin extends Plugin {
     });
   }
 
+  private get dataPath(): string {
+    return `${this.manifest.dir}/data.json`;
+  }
+
+  private async handleUnreadableData(): Promise<void> {
+    const result = await preserveUnreadableData(this.app.vault.adapter, this.dataPath);
+    if (result.state === "preserved") {
+      new Notice(`Crisp Reading Rail 的 data.json 无法读取，已备份为 ${result.backupPath.split("/").pop()}，本次使用默认设置，阅读位置记忆会重新开始。`, 12000);
+    } else if (result.state === "failed") {
+      this.dataWriteBlocked = true;
+      console.error("Crisp Reading Rail could not back up unreadable data.json", result.error);
+      new Notice("Crisp Reading Rail 的 data.json 无法读取，也无法备份。为保护原文件，本次运行不会保存设置和阅读位置。", 0);
+    }
+  }
+
   private persistSettings(): Promise<void> {
+    if (this.dataWriteBlocked) return Promise.resolve();
     const snapshot = JSON.parse(JSON.stringify(
       this.settings,
     )) as CrispReadingRailSettings;
-    const operation = this.saveQueue.then(() => this.saveData(snapshot));
+    const operation = this.saveQueue.then(async () => {
+      await this.saveData(snapshot);
+      try {
+        await verifyDataWrite(this.app.vault.adapter, this.dataPath, snapshot);
+        this.saveErrorShown = false;
+      } catch (error) {
+        if (!this.saveErrorShown) {
+          this.saveErrorShown = true;
+          new Notice("Crisp Reading Rail：阅读位置没有写入磁盘，下次变化时会再试。");
+        }
+        throw error;
+      }
+    });
     this.saveQueue = operation.catch((error) => {
       console.debug("Crisp Reading Rail settings save failed", error);
     });
