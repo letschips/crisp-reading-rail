@@ -436,6 +436,53 @@ describe("ReadingRailController", () => {
     expect(view.destroy).toHaveBeenCalledTimes(1);
   });
 
+  // Obsidian adds and removes rendered sections while a long note scrolls. Reading
+  // scroll metrics inside the frame forces an extra layout of that churn every frame.
+  it("samples scroll metrics in the scroll event and reads no layout in the frame", () => {
+    const { host, scroller } = makeFixture();
+    const clock = makeEnvironment();
+    const view = makeView();
+    const controller = new ReadingRailController({
+      host,
+      scroller,
+      preview: scroller,
+      getHeadings: () => [],
+      environment: clock.environment,
+      createView: () => view,
+    });
+    controller.start();
+    clock.flushFrame();
+
+    let top = 500;
+    let reads = 0;
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      get: () => {
+        reads += 1;
+        return top;
+      },
+    });
+    for (const key of ["scrollHeight", "clientHeight"] as const) {
+      const value = key === "scrollHeight" ? 1800 : 800;
+      Object.defineProperty(scroller, key, {
+        configurable: true,
+        get: () => {
+          reads += 1;
+          return value;
+        },
+      });
+    }
+    scroller.dispatchEvent(new Event("scroll"));
+    top = 900;
+    reads = 0;
+
+    clock.flushFrame();
+
+    expect(reads).toBe(0);
+    expect(view.setProgress).toHaveBeenLastCalledWith(0.5);
+    controller.destroy();
+  });
+
   it("waits for repeated width-only resizes to settle before rebuilding the outline", () => {
     const { host, scroller } = makeFixture();
     const clock = makeEnvironment();

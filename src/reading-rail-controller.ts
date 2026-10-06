@@ -99,6 +99,12 @@ function resolveLabelAnchor(entry: OutlineEntry): number | null {
     : null;
 }
 
+interface ScrollSample {
+  top: number;
+  height: number;
+  client: number;
+}
+
 export interface RailControllerEnvironment {
   requestAnimationFrame(callback: FrameRequestCallback): number;
   cancelAnimationFrame(id: number): void;
@@ -186,6 +192,7 @@ export class ReadingRailController {
   private mutationObserver: MutationObserverHandle | null = null;
   private entries: OutlineEntry[] = [];
   private frameId: number | null = null;
+  private scrollSample: ScrollSample | null = null;
   private navigationFrameId: number | null = null;
   private navigation: ScrollNavigation | null = null;
   private progressSettlementFrameId: number | null = null;
@@ -481,6 +488,9 @@ export class ReadingRailController {
   }
 
   private readonly handleScroll = (): void => {
+    // Obsidian adds and removes rendered sections while a long note scrolls. Sampling
+    // here keeps the frame from forcing another layout of that churn.
+    this.scrollSample = this.readScrollSample();
     this.scheduleFrame(false);
     this.scheduleReadingMemorySave();
   };
@@ -568,8 +578,9 @@ export class ReadingRailController {
         this.needsSelectionUpdate = false;
         this.refreshSelectedState();
       } else {
-        this.updateScrollState();
+        this.updateScrollState(this.scrollSample ?? undefined);
       }
+      this.scrollSample = null;
     });
   }
 
@@ -602,25 +613,33 @@ export class ReadingRailController {
     this.resizeRefreshTimer = null;
   }
 
-  private updateScrollState(): void {
+  private readScrollSample(): ScrollSample {
+    return {
+      top: this.scroller.scrollTop,
+      height: this.scroller.scrollHeight,
+      client: this.scroller.clientHeight,
+    };
+  }
+
+  private updateScrollState(sample = this.readScrollSample()): void {
     if (!this.view) {
       return;
     }
     if (this.dragProgress !== null) {
       const target = this.getProgressTop(this.dragProgress);
-      if (Math.abs(this.scroller.scrollTop - target) > NAVIGATION_SETTLE_TOLERANCE) {
+      if (Math.abs(sample.top - target) > NAVIGATION_SETTLE_TOLERANCE) {
         this.scroller.scrollTo({ top: target, behavior: "auto" });
       }
     }
     const progress = this.dragProgress ?? calculateProgress(
-      this.scroller.scrollTop,
-      this.scroller.scrollHeight,
-      this.scroller.clientHeight,
+      sample.top,
+      sample.height,
+      sample.client,
     );
     this.view.setProgress(progress);
     this.activeHeadingIndex = activeHeadingIndex(
       this.entries,
-      this.scroller.scrollTop,
+      sample.top,
       HEADING_ACTIVATION_OFFSET,
     );
     this.view.setActiveHeading(this.activeHeadingIndex);

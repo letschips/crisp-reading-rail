@@ -15,27 +15,12 @@ describe("Crisp Reading Rail styles", () => {
     expect(rootBlock).toMatch(/z-index:\s*0;/);
   });
 
-  it("uses the companion rail's focus glow and mirrored tick proportions", () => {
-    expect(css).toMatch(
-      /\.crisp-reading-rail \.crisp-reading-rail__line-focus\s*{[\s\S]*?height: 192px;[\s\S]*?linear-gradient/,
-    );
+  it("uses the companion rail's mirrored tick proportions", () => {
     expect(css).toMatch(
       /\.crisp-reading-rail \.crisp-reading-rail__tick\s*{[\s\S]*?width: 14px;/,
     );
     expect(css).toMatch(
       /\.crisp-reading-rail \.crisp-reading-rail__heading-tick\[data-level="2"\]\s*{\s*width: 24px;/,
-    );
-  });
-
-  it("keeps only the orb-centered focus line instead of a full-height rule", () => {
-    expect(css).toMatch(
-      /\.crisp-reading-rail \.crisp-reading-rail__line::before\s*{[\s\S]*?content: none;/,
-    );
-    expect(css).not.toMatch(
-      /focus-visible[\s\S]*?\.crisp-reading-rail__line::before/,
-    );
-    expect(css).toMatch(
-      /focus-visible[\s\S]*?\.crisp-reading-rail__line-focus/,
     );
   });
 
@@ -121,25 +106,18 @@ describe("Crisp Reading Rail styles", () => {
     );
   });
 
-  it("keeps the label column clear of the tick sweep and the progress readout", () => {
+  it("keeps the label column clear of the progress readout", () => {
     const labelsBlock = css.match(
       /\.crisp-reading-rail \.crisp-reading-rail__labels\s*\{([^}]*)\}/,
     )?.[1] ?? "";
     const gutter = Number(
       labelsBlock.match(/inset:\s*0\s+(\d+)px\s+0\s+auto;/)?.[1] ?? Number.NaN,
     );
-    // WAVE_AMPLITUDE (19.6px) plus a level-2 heading tick is the widest sweep, and the
-    // readout reaches furthest left of all painted elements at its 38px inset.
+    // The readout reaches furthest left of all painted rail elements at its 38px inset.
     expect(css).toMatch(
       /\.crisp-reading-rail \.crisp-reading-rail__progress\s*\{[^}]*right:\s*38px;/,
     );
     expect(gutter).toBeGreaterThanOrEqual(68);
-  });
-
-  it("snaps a whole-column read-tick jump without per-tick transitions", () => {
-    expect(css).toMatch(
-      /\.crisp-reading-rail \.crisp-reading-rail__ticks\.is-read-snap \.crisp-reading-rail__tick\s*{\s*transition:\s*none;/,
-    );
   });
 
   it("keeps waypoint hover restrained and limited to hover-capable pointers", () => {
@@ -152,18 +130,31 @@ describe("Crisp Reading Rail styles", () => {
     expect(css).not.toContain("scale(1.45)");
   });
 
-  it("celebrates with independent transform properties and honors reduced motion", () => {
-    const celebration = css.match(
-      /@keyframes crisp-orb-celebrate\s*{([\s\S]*?)\n}/,
-    )?.[1] ?? "";
-    expect(celebration).toContain("scale:");
-    expect(celebration).toContain("rotate:");
-    expect(celebration).not.toContain("transform:");
-    expect(css).toMatch(
-      /\.crisp-reading-rail \.crisp-reading-rail__orb\.is-celebrating\s*{[\s\S]*?animation: crisp-orb-celebrate 240ms/,
-    );
-    expect(css).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.crisp-reading-rail__orb\.is-celebrating[\s\S]*?animation: none;/,
-    );
+  // Each of these once moved or faded something on every scroll frame inside a
+  // translucent window, which is where the ghosting and jank came from.
+  it("keeps per-frame motion out of the rail", () => {
+    for (const pattern of [
+      /will-change:\s*transform/,
+      /--crisp-reading-wave-x/,
+      /crisp-orb-celebrate/,
+      /crisp-reading-rail__line-focus/,
+      /is-read-snap/,
+    ]) {
+      expect(css).not.toMatch(pattern);
+    }
+    for (const selector of ["__tick", "__heading-tick"]) {
+      const block = css.match(
+        new RegExp(`\\.crisp-reading-rail \\.crisp-reading-rail${selector}\\s*\\{([^}]*)\\}`),
+      )?.[1] ?? "";
+      expect(block, selector).not.toMatch(/transition/);
+    }
+  });
+
+  // A still rail needs no window-level compositing workaround; the plugin styles only
+  // its own rail, never the app container around every other view.
+  it("does not reach outside the rail to restyle or re-layer the window", () => {
+    expect(css).not.toMatch(/\.app-container/);
+    expect(css).not.toMatch(/translateZ/);
+    expect(css).not.toMatch(/crisp-reading-rail-short-scroll/);
   });
 });
