@@ -1,6 +1,10 @@
 # Crisp Reading Rail
 
-Crisp Reading Rail adds a compact reading-progress and heading-navigation rail to the right edge of each eligible Obsidian Markdown Reading view. Its proportional heading marks and optional orbs sit alongside the visual language of Crisp File Explorer without occupying Obsidian's native right sidebar.
+Crisp Reading Rail adds a compact reading-progress and heading-navigation rail to the right edge of each eligible Obsidian Markdown Reading view. Its proportional heading marks, orb-centered focus line, animated wave, and optional orbs sit alongside the visual language of Crisp File Explorer without occupying Obsidian's native right sidebar.
+
+## v0.6.0
+
+- 恢复滚动动效，同时保持稳定。
 
 ## v0.5.0
 
@@ -79,8 +83,9 @@ Crisp Reading Rail adds a compact reading-progress and heading-navigation rail t
 - Defers width-only outline measurements until pane resizing settles, while keeping height changes and the 680 px visibility threshold responsive.
 - Displays Crisp Annotations headings by their annotated target text while excluding annotation notes and directives from the rail label.
 - Displays Markdown links and aliased Obsidian wiki links as their visible heading labels, matching Reading view instead of exposing link syntax or destinations.
-- Shows borderless progress from `0.00` to `1.00`, completed-tick state, content-proportional H2-H4 marks, and an orb that sits exactly on the current reading position.
-- Keeps the rail still while scrolling: only the orb, its marker and the readout move, and they follow the scroll position directly without their own animation.
+- Shows borderless progress from `0.00` to `1.00`, completed-tick state, content-proportional H2-H4 marks, and a spring-following current-position orb.
+- Uses only a short, fading line centered on the orb; there is no persistent full-height vertical rule.
+- Bends nearby fine and heading marks leftward in a natural wave while scrolling. Reduced-motion mode snaps directly to the reading position.
 - Reveals H2, H3, and H4 labels when the pointer comes within 96px, on hover, or on keyboard focus. Labels remain clickable for three seconds after leaving.
 - Coalesces pointer proximity measurements to one layout read per animation frame.
 - Wraps long labels to at most three lines and uses their measured heights to prevent collisions without changing document layout.
@@ -90,7 +95,7 @@ Crisp Reading Rail adds a compact reading-progress and heading-navigation rail t
 - Dragging the orb scrubs the document continuously and stays locked to the pointer even while Obsidian virtualizes a long note.
 - Double-clicking the track, or pressing `M` while the slider is focused, saves a reading waypoint for the current note. Waypoints persist across reloads and support click, keyboard activation, keyboard deletion, and context-menu deletion.
 - Saved waypoints follow note or folder renames and are removed when their note or parent folder is deleted.
-- Reaching the end of a note plays an optional completion chime.
+- Reaching the end of a note plays an optional completion chime and uses a short position-safe celebration that respects reduced-motion preferences.
 - Adds Obsidian commands for next heading, previous heading, navigation-sound toggle, and orb-style cycling without assigning global hotkeys.
 - On desktop, hides when the pane is narrower than 680 px or the note does not scroll.
 - Restores a narrow native scrollbar when the pane is scrollable but too narrow to show the rail, including themes that globally hide scrollbars.

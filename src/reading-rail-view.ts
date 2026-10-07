@@ -1,8 +1,16 @@
 import { Platform } from "obsidian";
+import {
+  gaussianWaveOffset,
+  isSpringSettled,
+  isWithinWaveRadius,
+  stepSpring,
+  WAVE_DYNAMIC_RADIUS,
+} from "./motion";
 import type { RailSoundProvider } from "./audio-feedback";
 import {
   INLINE_ORB_SVGS,
   ORB_IMAGE_DATA_URLS,
+  STATIC_ORB_STYLES,
   resolveOrbStyle,
   type OrbStyleSetting,
   type ResolvedOrbStyle,
@@ -20,10 +28,40 @@ import type { OutlineScope } from "./outline-preferences";
 const PROXIMITY_DISTANCE = 96;
 const COLLAPSE_DELAY = 3000;
 const LABEL_GAP = 4;
-// Per-scroll state uses rail-scoped names: themes key :has() rules on generic classes
-// such as .is-active, and toggling one restyles the whole app.
 const HEADING_TICK_CURRENT_CLASS = "crisp-reading-rail__heading-tick--current";
 const TICK_READ_CLASS = "crisp-reading-rail__tick--read";
+const LINE_FOCUS_HEIGHT = 192;
+const ORB_ROTATION_PER_PX = 3.2;
+const READ_TICK_SNAP_STEP = 12;
+const READ_TICK_SNAP_CLASS = "crisp-reading-rail__ticks--snap";
+
+function lowerBound(values: readonly number[], target: number): number {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if ((values[middle] ?? 0) < target) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  return low;
+}
+
+function upperBound(values: readonly number[], target: number): number {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if ((values[middle] ?? 0) <= target) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  return low;
+}
 
 interface MutationObserverHandle {
   observe(target: Node, options?: MutationObserverInit): void;
@@ -49,6 +87,7 @@ export interface RailAppearanceProvider {
 export interface RailViewEnvironment {
   requestAnimationFrame(callback: FrameRequestCallback): number;
   cancelAnimationFrame(id: number): void;
+  reducedMotion(): boolean;
   createMutationObserver(callback: MutationCallback): MutationObserverHandle;
 }
 
@@ -68,6 +107,8 @@ export class ReadingRailView {
   private readonly window: Window;
   private readonly root: HTMLElement;
   private readonly track: HTMLElement;
+  private readonly line: HTMLElement;
+  private readonly lineFocus: HTMLElement;
   private readonly ticksContainer: HTMLElement;
   private readonly headingTicksContainer: HTMLElement;
   private readonly active: HTMLElement;
@@ -83,7 +124,13 @@ export class ReadingRailView {
   private readonly environment: RailViewEnvironment;
   private readonly sound?: RailSoundProvider;
   private ticks: HTMLElement[] = [];
+  private tickYPositions: number[] = [];
+  private tickWaveOffsets: number[] = [];
+  private tickWaveActiveIndices = new Set<number>();
   private headingTicks: HTMLElement[] = [];
+  private headingTickYPositions: number[] = [];
+  private headingTickWaveOffsets: number[] = [];
+  private headingTickWaveActiveIndices = new Set<number>();
   private labels: HTMLButtonElement[] = [];
   private waypointButtons: HTMLButtonElement[] = [];
   private waypoints: ReadingWaypoint[] = [];
@@ -98,11 +145,19 @@ export class ReadingRailView {
   private lastProgressText = "";
   private lastProgressPercentage = -1;
   private lastPositionAttribute = "";
+  private lastLineFocusTransform = "";
   private currentProgress = 0;
   private trackHeight = 1;
+  private targetPosition = 0;
+  private displayedPosition = 0;
+  private velocity = 0;
+  private positionInitialized = false;
   private visible = true;
+  private frameId: number | null = null;
   private proximityFrameId: number | null = null;
+  private readSnapFrameId: number | null = null;
   private pendingProximityPoint: { clientX: number; clientY: number } | null = null;
+  private lastFrameTimestamp: number | null = null;
   private collapseTimer: number | null = null;
   private dragPointerId: number | null = null;
   private followObserver: MutationObserverHandle | null = null;
@@ -132,6 +187,8 @@ export class ReadingRailView {
     this.environment = options.environment ?? {
       requestAnimationFrame: (callback) => window.requestAnimationFrame(callback),
       cancelAnimationFrame: (id) => window.cancelAnimationFrame(id),
+      reducedMotion: () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+        ?? false,
       createMutationObserver: (callback) => new window.MutationObserver(callback),
     };
 
@@ -163,6 +220,14 @@ export class ReadingRailView {
       this.track.removeAttribute("role");
       this.track.removeAttribute("tabindex");
     }
+
+    this.line = document.createElement("div");
+    this.line.className = "crisp-reading-rail__line";
+    this.line.setAttribute("aria-hidden", "true");
+
+    this.lineFocus = document.createElement("div");
+    this.lineFocus.className = "crisp-reading-rail__line-focus";
+    this.line.append(this.lineFocus);
 
     this.ticksContainer = document.createElement("div");
     this.ticksContainer.className = "crisp-reading-rail__ticks";
@@ -208,6 +273,7 @@ export class ReadingRailView {
     this.labelsContainer.className = "crisp-reading-rail__labels";
 
     this.track.append(
+      this.line,
       this.ticksContainer,
       this.headingTicksContainer,
       this.active,
@@ -222,6 +288,7 @@ export class ReadingRailView {
     this.track.addEventListener("dblclick", this.handleTrackDoubleClick);
     this.track.addEventListener("keydown", this.handleKeyDown);
     this.orb.addEventListener("pointerdown", this.handleOrbPointerDown);
+    this.orb.addEventListener("animationend", this.handleCelebrationEnd);
     this.host.addEventListener("pointermove", this.handlePointerMove, { passive: true });
     this.host.addEventListener("pointerleave", this.handlePointerLeave);
     this.root.addEventListener("focusin", this.handleFocusIn);
@@ -274,6 +341,8 @@ export class ReadingRailView {
       return tick;
     });
     this.ticksContainer.replaceChildren(...this.ticks);
+    this.tickWaveOffsets = Array.from({ length: this.ticks.length }, () => Number.NaN);
+    this.tickWaveActiveIndices.clear();
 
     this.headingTicks = this.entries.map((entry) => {
       const tick = document.createElement("span");
@@ -287,6 +356,11 @@ export class ReadingRailView {
       return tick;
     });
     this.headingTicksContainer.replaceChildren(...this.headingTicks);
+    this.headingTickWaveOffsets = Array.from(
+      { length: this.headingTicks.length },
+      () => Number.NaN,
+    );
+    this.headingTickWaveActiveIndices.clear();
 
     this.labels = this.entries.map((entry, index) => {
       const label = document.createElement("button");
@@ -334,9 +408,15 @@ export class ReadingRailView {
       return;
     }
     this.updateProgressState(progress);
-    if (this.visible) {
-      this.renderPosition();
+
+    if (!this.visible) {
+      return;
     }
+    if (!this.positionInitialized || this.environment.reducedMotion()) {
+      this.snapToTarget();
+      return;
+    }
+    this.scheduleAnimation();
   }
 
   setWaypoints(waypoints: readonly (ReadingWaypoint | number)[]): void {
@@ -429,7 +509,9 @@ export class ReadingRailView {
       if (dragProgress !== null) {
         this.callbacks.onProgressDragCancel?.(dragProgress);
       }
+      this.cancelAnimation();
       this.cancelProximityCheck();
+      this.positionInitialized = false;
       this.setExpanded(false);
       return;
     }
@@ -477,8 +559,10 @@ export class ReadingRailView {
     }
     this.destroyed = true;
     this.finishDrag();
+    this.cancelAnimation();
     this.cancelProximityCheck();
     this.cancelCollapse();
+    this.clearReadTickSnap();
     this.followObserver?.disconnect();
     this.followObserver = null;
     if (this.orbImage) {
@@ -489,13 +573,18 @@ export class ReadingRailView {
     this.track.removeEventListener("dblclick", this.handleTrackDoubleClick);
     this.track.removeEventListener("keydown", this.handleKeyDown);
     this.orb.removeEventListener("pointerdown", this.handleOrbPointerDown);
+    this.orb.removeEventListener("animationend", this.handleCelebrationEnd);
     this.host.removeEventListener("pointermove", this.handlePointerMove);
     this.host.removeEventListener("pointerleave", this.handlePointerLeave);
     this.root.removeEventListener("focusin", this.handleFocusIn);
     this.root.removeEventListener("focusout", this.handleFocusOut);
     this.root.remove();
     this.ticks = [];
+    this.tickWaveOffsets = [];
+    this.tickWaveActiveIndices.clear();
     this.headingTicks = [];
+    this.headingTickWaveOffsets = [];
+    this.headingTickWaveActiveIndices.clear();
     this.labels = [];
     this.waypointButtons = [];
     this.waypoints = [];
@@ -513,6 +602,12 @@ export class ReadingRailView {
     if (measuredTrackHeight > 0) {
       this.trackHeight = measuredTrackHeight;
     }
+    this.tickYPositions = this.ticks.map((tick) => (
+      Number(tick.dataset.progress ?? 0) * this.trackHeight
+    ));
+    this.headingTickYPositions = this.entries.map((entry) => (
+      clamp01(entry.progress) * this.trackHeight
+    ));
     const labelHeights = this.labels.map((label) => (
       label.getBoundingClientRect().height || label.scrollHeight || 20
     ));
@@ -553,8 +648,8 @@ export class ReadingRailView {
       });
       this.applyLabelAnchors(resolved, labelHeights);
     }
+    this.targetPosition = this.currentProgress * this.trackHeight;
     this.needsLabelLayout = false;
-    this.renderPosition();
   }
 
   /**
@@ -598,22 +693,153 @@ export class ReadingRailView {
     }
   }
 
-  // The only thing that moves while the document scrolls: orb, marker and readout share
-  // one position and follow it directly, without an animation loop of their own.
-  private renderPosition(): void {
-    const position = this.currentProgress * this.trackHeight;
-    if (this.attributeDriven) {
-      const value = `${position}px`;
-      if (value !== this.lastPositionAttribute) {
-        this.root.dataset.position = value;
-        this.lastPositionAttribute = value;
-      }
+  private snapToTarget(): void {
+    this.cancelAnimation();
+    this.displayedPosition = this.targetPosition;
+    this.velocity = 0;
+    this.positionInitialized = true;
+    this.renderPosition();
+  }
+
+  private scheduleAnimation(): void {
+    if (this.frameId !== null || this.destroyed || !this.visible) {
       return;
     }
-    const translateY = `translateY(${position}px)`;
-    this.active.style.transform = `${translateY} translateY(-50%)`;
-    this.orb.style.transform = `${translateY} translate(50%, -50%)`;
-    this.progressLabel.style.transform = `${translateY} translateY(-50%)`;
+    this.frameId = this.environment.requestAnimationFrame(this.handleAnimationFrame);
+  }
+
+  private readonly handleAnimationFrame = (timestamp: number): void => {
+    this.frameId = null;
+    if (this.destroyed || !this.visible) {
+      return;
+    }
+    const delta = this.lastFrameTimestamp === null
+      ? 1 / 60
+      : (timestamp - this.lastFrameTimestamp) / 1000;
+    this.lastFrameTimestamp = timestamp;
+    const next = stepSpring(
+      { position: this.displayedPosition, velocity: this.velocity },
+      this.targetPosition,
+      delta,
+    );
+    this.displayedPosition = next.position;
+    this.velocity = next.velocity;
+    if (isSpringSettled(next, this.targetPosition)) {
+      this.displayedPosition = this.targetPosition;
+      this.velocity = 0;
+    }
+    this.renderPosition();
+    if (this.displayedPosition !== this.targetPosition || this.velocity !== 0) {
+      this.scheduleAnimation();
+    } else {
+      this.lastFrameTimestamp = null;
+    }
+  };
+
+  private cancelAnimation(): void {
+    if (this.frameId !== null) {
+      this.environment.cancelAnimationFrame(this.frameId);
+      this.frameId = null;
+    }
+    this.lastFrameTimestamp = null;
+  }
+
+  private renderPosition(): void {
+    if (this.attributeDriven) {
+      const position = `${this.displayedPosition}px`;
+      if (position !== this.lastPositionAttribute) {
+        this.root.dataset.position = position;
+        this.lastPositionAttribute = position;
+      }
+    } else {
+      const translateY = `translateY(${this.displayedPosition}px)`;
+      this.active.style.transform = `${translateY} translateY(-50%)`;
+      this.orb.style.transform = `${translateY} translate(50%, -50%)`;
+      this.progressLabel.style.transform = `${translateY} translateY(-50%)`;
+      const lineFocusTransform = `translateY(${
+        this.displayedPosition - LINE_FOCUS_HEIGHT / 2
+      }px)`;
+      if (lineFocusTransform !== this.lastLineFocusTransform) {
+        this.lineFocus.style.transform = lineFocusTransform;
+        this.lastLineFocusTransform = lineFocusTransform;
+      }
+    }
+    this.applyWave(
+      this.ticks,
+      this.tickYPositions,
+      this.tickWaveOffsets,
+      this.tickWaveActiveIndices,
+    );
+    this.applyWave(
+      this.headingTicks,
+      this.headingTickYPositions,
+      this.headingTickWaveOffsets,
+      this.headingTickWaveActiveIndices,
+    );
+    if (
+      this.orbMedia
+      && this.resolvedOrbStyle !== "default"
+      && !STATIC_ORB_STYLES.has(this.resolvedOrbStyle)
+      && !this.environment.reducedMotion()
+    ) {
+      const rotation = `${this.displayedPosition * ORB_ROTATION_PER_PX}deg`;
+      if (this.attributeDriven) {
+        this.orbMedia.dataset.rotation = rotation;
+      } else {
+        this.orbMedia.style.transform = `rotate(${rotation})`;
+      }
+    }
+  }
+
+  private setWaveOffset(element: HTMLElement, offset: number): void {
+    if (this.attributeDriven) {
+      element.dataset.waveX = `${offset}px`;
+    } else {
+      element.style.setProperty("--crisp-reading-wave-x", `${offset}px`);
+    }
+  }
+
+  private applyWave(
+    elements: readonly HTMLElement[],
+    positions: readonly number[],
+    previousOffsets: number[],
+    activeIndices: Set<number>,
+  ): void {
+    const minimum = this.displayedPosition - WAVE_DYNAMIC_RADIUS;
+    const maximum = this.displayedPosition + WAVE_DYNAMIC_RADIUS;
+    const first = lowerBound(positions, minimum);
+    const end = upperBound(positions, maximum);
+
+    for (const index of [...activeIndices]) {
+      if (index >= first && index < end) {
+        continue;
+      }
+      const element = elements[index];
+      if (element && previousOffsets[index] !== 0) {
+        this.setWaveOffset(element, 0);
+        previousOffsets[index] = 0;
+      }
+      activeIndices.delete(index);
+    }
+
+    for (let index = first; index < end; index += 1) {
+      const element = elements[index];
+      if (!element) {
+        continue;
+      }
+      const itemY = positions[index] ?? 0;
+      const rawOffset = isWithinWaveRadius(this.displayedPosition, itemY)
+        ? -gaussianWaveOffset(this.displayedPosition, itemY)
+        : 0;
+      const offset = Math.round(rawOffset * 100) / 100;
+      if (Object.is(previousOffsets[index], offset)) {
+        activeIndices.add(index);
+        continue;
+      }
+      this.setWaveOffset(element, offset);
+      previousOffsets[index] = offset;
+      activeIndices.add(index);
+    }
   }
 
   private applyOrbStyle(style: ResolvedOrbStyle): void {
@@ -647,6 +873,7 @@ export class ReadingRailView {
       this.orb.append(wrapper);
       this.orbImage = image;
       this.orbMedia = wrapper;
+      this.renderPosition();
       return;
     }
 
@@ -660,6 +887,7 @@ export class ReadingRailView {
     wrapper.innerHTML = inlineSvg;
     this.orb.append(wrapper);
     this.orbMedia = wrapper;
+    this.renderPosition();
   }
 
   private readonly handlePointerMove = (event: PointerEvent): void => {
@@ -807,6 +1035,7 @@ export class ReadingRailView {
     event.preventDefault();
     event.stopPropagation();
     this.dragPointerId = event.pointerId;
+    this.cancelAnimation();
     this.expandNow();
     this.root.classList.add("is-dragging");
     this.orb.classList.add("is-dragging");
@@ -885,7 +1114,7 @@ export class ReadingRailView {
     }
     const progress = progressFromPointer(clientY, bounds.top, bounds.height);
     this.updateProgressState(progress);
-    this.renderPosition();
+    this.snapToTarget();
     this.callbacks.onProgressDrag?.(progress);
     return progress;
   }
@@ -962,8 +1191,17 @@ export class ReadingRailView {
     }
     event.preventDefault();
     this.updateProgressState(next);
-    this.renderPosition();
+    this.snapToTarget();
     this.callbacks.onProgressSelect(next, false, false);
+  };
+
+  private readonly handleCelebrationEnd = (event: AnimationEvent): void => {
+    if (
+      event.target === this.orb
+      && event.animationName === "crisp-orb-celebrate"
+    ) {
+      this.orb.classList.remove("is-celebrating");
+    }
   };
 
   private hasCompanionMutation(records: readonly MutationRecord[]): boolean {
@@ -1004,6 +1242,16 @@ export class ReadingRailView {
       this.ticks.length - 1,
       Math.floor(this.currentProgress * (this.ticks.length - 1) + Number.EPSILON),
     );
+    // Switching articles, or restoring a saved scroll position, moves the read frontier
+    // across many ticks in a single frame. Fading that whole column at once asks Chromium
+    // to build a layer per tick inside the pane's translucent backing layer, which shows
+    // up as a one-frame full-page flash. Snap those jumps instead of animating them.
+    if (
+      this.lastReadTickIndex !== Number.MIN_SAFE_INTEGER
+      && Math.abs(nextIndex - this.lastReadTickIndex) > READ_TICK_SNAP_STEP
+    ) {
+      this.armReadTickSnap();
+    }
     if (this.lastReadTickIndex === Number.MIN_SAFE_INTEGER) {
       this.ticks.forEach((tick, index) => {
         tick.classList.toggle(TICK_READ_CLASS, index <= nextIndex);
@@ -1018,6 +1266,25 @@ export class ReadingRailView {
       }
     }
     this.lastReadTickIndex = nextIndex;
+  }
+
+  private armReadTickSnap(): void {
+    this.ticksContainer.classList.add(READ_TICK_SNAP_CLASS);
+    if (this.readSnapFrameId !== null) {
+      return;
+    }
+    this.readSnapFrameId = this.environment.requestAnimationFrame(() => {
+      this.readSnapFrameId = null;
+      this.ticksContainer.classList.remove(READ_TICK_SNAP_CLASS);
+    });
+  }
+
+  private clearReadTickSnap(): void {
+    if (this.readSnapFrameId !== null) {
+      this.environment.cancelAnimationFrame(this.readSnapFrameId);
+      this.readSnapFrameId = null;
+    }
+    this.ticksContainer.classList.remove(READ_TICK_SNAP_CLASS);
   }
 
   private updateLabelBranch(): boolean {
@@ -1071,6 +1338,7 @@ export class ReadingRailView {
 
   private updateProgressState(progress: number): void {
     this.currentProgress = clamp01(progress);
+    this.targetPosition = this.currentProgress * this.trackHeight;
     const percentage = Math.round(this.currentProgress * 100);
     const progressText = this.currentProgress.toFixed(2);
     if (progressText !== this.lastProgressText) {
@@ -1086,8 +1354,12 @@ export class ReadingRailView {
     if (this.currentProgress >= 0.985 && !this.hasCelebratedCompletion) {
       this.hasCelebratedCompletion = true;
       this.sound?.completionChime?.(this.window);
+      if (!this.environment.reducedMotion()) {
+        this.orb.classList.add("is-celebrating");
+      }
     } else if (this.currentProgress < 0.85) {
       this.hasCelebratedCompletion = false;
+      this.orb.classList.remove("is-celebrating");
     }
   }
 

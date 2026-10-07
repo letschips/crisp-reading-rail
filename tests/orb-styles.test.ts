@@ -6,6 +6,7 @@ import {
   ORB_IMAGE_DATA_URLS,
   ORB_STYLE_OPTIONS,
   RANDOM_DAILY_ORB_STYLES,
+  STATIC_ORB_STYLES,
   normalizeOrbStyle,
   resolveOrbStyle,
 } from "../src/orb-styles";
@@ -45,6 +46,27 @@ describe("orb styles", () => {
       expect(Boolean(INLINE_ORB_SVGS[style] ?? ORB_IMAGE_DATA_URLS[style]))
         .toBe(true);
     }
+
+    expect(STATIC_ORB_STYLES).toEqual(
+      new Set([
+        "character1",
+        "character2",
+        "character3",
+        "character4",
+        "character5",
+        "character6",
+        "character7",
+        "character8",
+        "character9",
+        "character10",
+        "snorlax",
+        "pikachu",
+        "snorlaxface",
+        "batman",
+        "superman",
+        "spiderman",
+      ]),
+    );
   });
 
   it("embeds every orb inline and keeps only character PNGs as data URLs", () => {
@@ -54,6 +76,13 @@ describe("orb styles", () => {
       character3: expect.stringMatching(/^data:image\/png;base64,/),
     });
     expect(ORB_IMAGE_DATA_URLS.character1?.length).toBeGreaterThan(1000);
+
+    for (const style of ["snorlax", "pikachu", "snorlaxface", "batman", "superman", "spiderman", "character4", "character5", "character6", "character7", "character8", "character9", "character10"] as const) {
+      expect(STATIC_ORB_STYLES.has(style)).toBe(true);
+    }
+    for (const style of ["soccer", "basketball", "tennis", "shutup", "pokeball", "bracelet", "angry", "squint", "facemask", "pokerface", "captainshield", "dizzy", "vinyl"] as const) {
+      expect(STATIC_ORB_STYLES.has(style)).toBe(false);
+    }
   });
 
   it("resolves random per day deterministically from the local date", () => {

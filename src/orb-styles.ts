@@ -113,6 +113,25 @@ export const INLINE_ORB_SVGS: Partial<Record<MaterialOrbStyle, string>> =
 export const ORB_IMAGE_DATA_URLS: Partial<Record<MaterialOrbStyle, string>> =
   GENERATED_ORB_IMAGE_DATA_URLS;
 
+export const STATIC_ORB_STYLES = new Set<MaterialOrbStyle>([
+  "character1",
+  "character2",
+  "character3",
+  "character4",
+  "character5",
+  "character6",
+  "character7",
+  "character8",
+  "character9",
+  "character10",
+  "snorlax",
+  "pikachu",
+  "snorlaxface",
+  "batman",
+  "superman",
+  "spiderman",
+]);
+
 const VALID_SETTINGS = new Set<OrbStyleSetting>([
   "followFileExplorer",
   "default",

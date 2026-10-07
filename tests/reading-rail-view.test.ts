@@ -46,7 +46,7 @@ function pointerEvent(
   return event;
 }
 
-function makeViewEnvironment() {
+function makeViewEnvironment(reducedMotion = false) {
   let nextFrame = 1;
   let now = 0;
   const frames = new Map<number, FrameRequestCallback>();
@@ -66,6 +66,7 @@ function makeViewEnvironment() {
       cancelled.push(id);
       frames.delete(id);
     },
+    reducedMotion: () => reducedMotion,
     createMutationObserver(callback) {
       const observer = { callback, observe: vi.fn(), disconnect: vi.fn() };
       mutationObservers.push(observer);
@@ -471,6 +472,62 @@ describe("ReadingRailView", () => {
     expect(onWaypointsChange).not.toHaveBeenCalled();
   });
 
+  it("celebrates completion without replacing the orb position transform", () => {
+    const sound = {
+      tick: vi.fn(),
+      settle: vi.fn(),
+      completionChime: vi.fn(),
+    };
+    const clock = makeViewEnvironment();
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    }, { environment: clock.environment, sound });
+    const track = host.querySelector<HTMLElement>(".crisp-reading-rail__track")!;
+    const orb = host.querySelector<HTMLElement>(".crisp-reading-rail__orb")!;
+    setMetric(track, "clientHeight", 400);
+    view.setOutline([], 12);
+    view.setProgress(0.9);
+    clock.flushAll();
+    const positionTransform = orb.style.transform;
+
+    view.setProgress(0.99);
+    expect(sound.completionChime).toHaveBeenCalledOnce();
+    expect(orb.classList.contains("is-celebrating")).toBe(true);
+    expect(orb.style.transform).toBe(positionTransform);
+
+    const animationEnd = new Event("animationend", { bubbles: true });
+    Object.defineProperty(animationEnd, "animationName", {
+      value: "crisp-orb-celebrate",
+    });
+    orb.dispatchEvent(animationEnd);
+    expect(orb.classList.contains("is-celebrating")).toBe(false);
+
+    view.setProgress(0.8);
+    view.setProgress(1);
+    expect(sound.completionChime).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the completion celebration still when reduced motion is requested", () => {
+    const sound = {
+      tick: vi.fn(),
+      settle: vi.fn(),
+      completionChime: vi.fn(),
+    };
+    const clock = makeViewEnvironment(true);
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    }, { environment: clock.environment, sound });
+
+    view.setProgress(1);
+
+    expect(sound.completionChime).toHaveBeenCalledOnce();
+    expect(host.querySelector(".crisp-reading-rail__orb.is-celebrating")).toBeNull();
+  });
+
   it("coalesces pointer proximity measurements into one animation frame", () => {
     const clock = makeViewEnvironment();
     const host = document.createElement("div");
@@ -725,8 +782,71 @@ describe("ReadingRailView", () => {
     ).toBeUndefined();
   });
 
+  it("snaps a large read-tick jump without starting per-tick transitions", () => {
+    const clock = makeViewEnvironment(true);
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    }, { environment: clock.environment });
+    view.setOutline([makeEntry()], 60);
+    view.setProgress(1);
+    clock.flushAll();
+    const container = host.querySelector<HTMLElement>(
+      ".crisp-reading-rail__ticks",
+    )!;
+    expect(host.querySelectorAll(".crisp-reading-rail__tick--read")).toHaveLength(60);
+    expect(container.classList.contains("crisp-reading-rail__ticks--snap")).toBe(false);
+
+    view.setProgress(0);
+
+    expect(host.querySelectorAll(".crisp-reading-rail__tick--read")).toHaveLength(1);
+    expect(container.classList.contains("crisp-reading-rail__ticks--snap")).toBe(true);
+    clock.flushAll();
+    expect(container.classList.contains("crisp-reading-rail__ticks--snap")).toBe(false);
+  });
+
+  it("keeps the tick transition for incremental reading steps", () => {
+    const clock = makeViewEnvironment(true);
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    }, { environment: clock.environment });
+    view.setOutline([makeEntry()], 60);
+    view.setProgress(0.5);
+    clock.flushAll();
+    const container = host.querySelector<HTMLElement>(
+      ".crisp-reading-rail__ticks",
+    )!;
+
+    view.setProgress(0.53);
+
+    expect(container.classList.contains("crisp-reading-rail__ticks--snap")).toBe(false);
+    expect(host.querySelectorAll(".crisp-reading-rail__tick--read").length)
+      .toBeGreaterThan(30);
+  });
+
+  it("clears the read-tick snap state on destroy", () => {
+    const clock = makeViewEnvironment(true);
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    }, { environment: clock.environment });
+    view.setOutline([makeEntry()], 60);
+    view.setProgress(1);
+    clock.flushAll();
+    view.setProgress(0);
+
+    view.destroy();
+
+    expect(host.querySelector(".crisp-reading-rail")).toBeNull();
+    expect(host.querySelector(".crisp-reading-rail__ticks")).toBeNull();
+  });
+
   it("moves the active marker, orb, and progress label with transforms", () => {
-    const clock = makeViewEnvironment();
+    const clock = makeViewEnvironment(true);
     const host = document.createElement("div");
     const view = ReadingRailView.mount(host, {
       onHeadingSelect: vi.fn(),
@@ -745,6 +865,23 @@ describe("ReadingRailView", () => {
       .toContain("translateY(200px)");
     expect(host.querySelector<HTMLElement>(".crisp-reading-rail__progress")?.style.transform)
       .toContain("translateY(200px)");
+  });
+
+  it("centers a Crisp-style focus glow on the moving orb", () => {
+    const clock = makeViewEnvironment(true);
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    }, { environment: clock.environment });
+    const track = host.querySelector<HTMLElement>(".crisp-reading-rail__track")!;
+    setMetric(track, "clientHeight", 400);
+    view.setOutline([], 12);
+    view.setProgress(0.5);
+
+    expect(host.querySelector(".crisp-reading-rail__line")).not.toBeNull();
+    expect(host.querySelector<HTMLElement>(".crisp-reading-rail__line-focus")
+      ?.style.transform).toBe("translateY(104px)");
   });
 
   it("drags the orb continuously with pointer capture without starting track navigation", () => {
@@ -863,6 +1000,29 @@ describe("ReadingRailView", () => {
     view.destroy();
   });
 
+  it("does not rewrite a far tick while the wave remains out of range", () => {
+    const clock = makeViewEnvironment();
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    }, { environment: clock.environment });
+    const track = host.querySelector<HTMLElement>(".crisp-reading-rail__track")!;
+    setMetric(track, "clientHeight", 400);
+    view.setOutline([], 5);
+    view.setProgress(0.5);
+    const farTick = host.querySelectorAll<HTMLElement>(".crisp-reading-rail__tick")[0];
+    const setProperty = vi.spyOn(farTick.style, "setProperty");
+
+    view.setProgress(0.75);
+    clock.flushFrame();
+
+    expect(setProperty).not.toHaveBeenCalledWith(
+      "--crisp-reading-wave-x",
+      expect.any(String),
+    );
+  });
+
   it("removes every owned node on destroy", () => {
     const host = document.createElement("div");
     const view = ReadingRailView.mount(host, {
@@ -871,6 +1031,53 @@ describe("ReadingRailView", () => {
     });
     view.destroy();
     expect(host.querySelector(".crisp-reading-rail")).toBeNull();
+  });
+
+  it("springs after the first snap and mirrors nearby ticks to negative X", () => {
+    const clock = makeViewEnvironment();
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    }, { environment: clock.environment });
+    const track = host.querySelector<HTMLElement>(".crisp-reading-rail__track")!;
+    setMetric(track, "clientHeight", 400);
+    view.setOutline([{ ...makeEntry(), progress: 0.5 }], 5);
+
+    view.setProgress(0.25);
+    expect(translateY(host.querySelector(".crisp-reading-rail__active"))).toBe(100);
+
+    view.setProgress(0.75);
+    expect(clock.pendingFrames).toBe(1);
+    clock.flushFrame();
+    const animatedPosition = translateY(host.querySelector(".crisp-reading-rail__active"));
+    expect(animatedPosition).toBeGreaterThan(100);
+    expect(animatedPosition).toBeLessThan(300);
+
+    clock.flushAll();
+    const ticks = host.querySelectorAll<HTMLElement>(".crisp-reading-rail__tick");
+    expect(Number.parseFloat(ticks[3].style.getPropertyValue("--crisp-reading-wave-x")))
+      .toBeLessThan(0);
+    expect(ticks[0].style.getPropertyValue("--crisp-reading-wave-x")).toBe("0px");
+    expect(host.querySelector<HTMLElement>(".crisp-reading-rail__heading-tick")
+      ?.style.getPropertyValue("--crisp-reading-wave-x")).not.toBe("0px");
+  });
+
+  it("snaps without animation when reduced motion is enabled", () => {
+    const clock = makeViewEnvironment(true);
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    }, { environment: clock.environment });
+    const track = host.querySelector<HTMLElement>(".crisp-reading-rail__track")!;
+    setMetric(track, "clientHeight", 400);
+    view.setOutline([], 12);
+    view.setProgress(0.2);
+    view.setProgress(0.8);
+
+    expect(clock.pendingFrames).toBe(0);
+    expect(translateY(host.querySelector(".crisp-reading-rail__active"))).toBe(320);
   });
 
   it("snaps the first progress update after becoming visible", () => {
@@ -922,6 +1129,30 @@ describe("ReadingRailView", () => {
     expect(orb.querySelector("img")).toBeNull();
   });
 
+  it("rotates inline orbs through a stable square wrapper", () => {
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    }, {
+      appearance: {
+        getOrbStyle: () => "fear",
+        getAssetUrl: (path) => `app://reading-rail/${path}`,
+      },
+    });
+    const track = host.querySelector<HTMLElement>(".crisp-reading-rail__track")!;
+    setMetric(track, "clientHeight", 400);
+    view.setOutline([], 12);
+    view.setProgress(0.5);
+
+    const media = host.querySelector<HTMLElement>(".crisp-reading-rail__orb-media")!;
+    const svg = media.querySelector("svg")!;
+    expect(media.tagName).toBe("SPAN");
+    expect(media.contains(svg)).toBe(true);
+    expect(media.style.transform).toMatch(/^rotate\(.+deg\)$/);
+    expect(svg.style.transform).toBe("");
+  });
+
   it("follows the companion DOM style and disconnects owned observers and frames", () => {
     document.body.innerHTML =
       '<div class="crisp-fe-orb" data-orb-style="gear"></div>';
@@ -968,7 +1199,7 @@ describe("ReadingRailView", () => {
     view.setProgress(0.2);
     view.setProgress(0.8);
     view.destroy();
-    expect(clock.pendingFrames).toBe(0);
+    expect(clock.cancelled).toHaveLength(1);
     expect(clock.mutationObservers[0].disconnect).toHaveBeenCalledTimes(1);
   });
 
@@ -1117,7 +1348,7 @@ describe("ReadingRailView per-frame styling", () => {
 
   it("moves the rail through a data attribute instead of per-frame inline styles", () => {
     restoreCss = stubTypedAttrSupport();
-    const clock = makeViewEnvironment();
+    const clock = makeViewEnvironment(true);
     const host = document.createElement("div");
     const view = ReadingRailView.mount(host, {
       onHeadingSelect: vi.fn(),
@@ -1135,6 +1366,7 @@ describe("ReadingRailView per-frame styling", () => {
       ".crisp-reading-rail__active",
       ".crisp-reading-rail__orb",
       ".crisp-reading-rail__progress",
+      ".crisp-reading-rail__line-focus",
     ]) {
       expect(host.querySelector<HTMLElement>(selector)?.getAttribute("style"), selector)
         .toBeNull();
@@ -1143,7 +1375,7 @@ describe("ReadingRailView per-frame styling", () => {
   });
 
   it("keeps inline transforms where typed attr() is unavailable", () => {
-    const clock = makeViewEnvironment();
+    const clock = makeViewEnvironment(true);
     const host = document.createElement("div");
     const view = ReadingRailView.mount(host, {
       onHeadingSelect: vi.fn(),
@@ -1162,7 +1394,7 @@ describe("ReadingRailView per-frame styling", () => {
   });
 
   it("updates the progress readout without replacing its text node", () => {
-    const clock = makeViewEnvironment();
+    const clock = makeViewEnvironment(true);
     const host = document.createElement("div");
     const view = ReadingRailView.mount(host, {
       onHeadingSelect: vi.fn(),
@@ -1182,123 +1414,42 @@ describe("ReadingRailView per-frame styling", () => {
     view.destroy();
   });
 
-});
-
-// Stability contract: while the document scrolls, only the orb, its marker and its readout
-// move, all from one value, and nothing schedules frames of its own.
-describe("ReadingRailView still rail", () => {
-  function mountStill(height = 400, options: Parameters<typeof ReadingRailView.mount>[2] = {}) {
+  it("waves nearby ticks through data attributes without inline custom properties", () => {
+    restoreCss = stubTypedAttrSupport();
     const clock = makeViewEnvironment();
     const host = document.createElement("div");
     const view = ReadingRailView.mount(host, {
       onHeadingSelect: vi.fn(),
       onProgressSelect: vi.fn(),
-    }, { environment: clock.environment, ...options });
+    }, { environment: clock.environment });
     const track = host.querySelector<HTMLElement>(".crisp-reading-rail__track")!;
-    setMetric(track, "clientHeight", height);
-    return { clock, host, view, track };
-  }
-
-  it("follows progress immediately without scheduling frames", () => {
-    const { clock, host, view } = mountStill();
+    setMetric(track, "clientHeight", 400);
     view.setOutline([{ ...makeEntry(), progress: 0.5 }], 5);
     view.setProgress(0.25);
     view.setProgress(0.75);
+    clock.flushAll();
 
-    expect(clock.pendingFrames).toBe(0);
-    expect(translateY(host.querySelector(".crisp-reading-rail__active"))).toBe(300);
-    expect(translateY(host.querySelector(".crisp-reading-rail__orb"))).toBe(300);
-    view.destroy();
-  });
-
-  it("keeps every tick still while the orb passes", () => {
-    const { host, view } = mountStill();
-    view.setOutline([{ ...makeEntry(), progress: 0.5 }], 5);
-    for (const progress of [0.2, 0.45, 0.5, 0.55, 0.8]) {
-      view.setProgress(progress);
+    const ticks = host.querySelectorAll<HTMLElement>(".crisp-reading-rail__tick");
+    const headingTick = host.querySelector<HTMLElement>(".crisp-reading-rail__heading-tick")!;
+    for (const element of [...ticks, headingTick]) {
+      expect(element.style.getPropertyValue("--crisp-reading-wave-x")).toBe("");
     }
-
-    for (const tick of host.querySelectorAll<HTMLElement>(
-      ".crisp-reading-rail__tick, .crisp-reading-rail__heading-tick",
-    )) {
-      expect(tick.style.getPropertyValue("--crisp-reading-wave-x")).toBe("");
-      expect(tick.dataset.waveX).toBeUndefined();
-    }
-    view.destroy();
-  });
-
-  it("renders no moving focus line", () => {
-    const { host, view } = mountStill();
-    view.setOutline([], 12);
-    view.setProgress(0.5);
-
-    expect(host.querySelector(".crisp-reading-rail__line-focus")).toBeNull();
-    expect(host.querySelector(".crisp-reading-rail__line")).toBeNull();
-    view.destroy();
-  });
-
-  it("keeps the orb artwork upright", () => {
-    const { host, view } = mountStill(400, {
-      appearance: {
-        getOrbStyle: () => "fear",
-        getAssetUrl: (path) => `app://reading-rail/${path}`,
-      },
-    });
-    view.setOutline([], 12);
-    view.setProgress(0.5);
-
-    const media = host.querySelector<HTMLElement>(".crisp-reading-rail__orb-media")!;
-    expect(media.querySelector("svg")).not.toBeNull();
-    expect(media.getAttribute("style")).toBeNull();
-    expect(media.dataset.rotation).toBeUndefined();
-    view.destroy();
-  });
-
-  it("plays the completion chime without a celebration animation", () => {
-    const sound = { tick: vi.fn(), settle: vi.fn(), completionChime: vi.fn() };
-    const { host, view } = mountStill(400, { sound });
-    view.setOutline([], 12);
-    view.setProgress(0.9);
-    view.setProgress(0.99);
-    view.setProgress(0.8);
-    view.setProgress(1);
-
-    expect(sound.completionChime).toHaveBeenCalledTimes(2);
-    expect(host.querySelector(".is-celebrating")).toBeNull();
-    view.destroy();
-  });
-
-  it("switches read ticks in one step without a snap state", () => {
-    const { host, view } = mountStill();
-    view.setOutline([makeEntry()], 60);
-    view.setProgress(1);
-    expect(host.querySelectorAll(".crisp-reading-rail__tick--read")).toHaveLength(60);
-
-    view.setProgress(0);
-
-    expect(host.querySelectorAll(".crisp-reading-rail__tick--read")).toHaveLength(1);
-    expect(host.querySelector(".is-read-snap")).toBeNull();
-    view.destroy();
-  });
-
-  it("repositions the orb when the track is remeasured", () => {
-    const { host, view, track } = mountStill();
-    view.setOutline([], 12);
-    view.setProgress(0.5);
-    expect(translateY(host.querySelector(".crisp-reading-rail__orb"))).toBe(200);
-
-    setMetric(track, "clientHeight", 600);
-    view.setVisible(false);
-    view.setVisible(true);
-
-    expect(translateY(host.querySelector(".crisp-reading-rail__orb"))).toBe(300);
+    expect(Number.parseFloat(ticks[3].dataset.waveX ?? "")).toBeLessThan(0);
+    expect(ticks[0].dataset.waveX).toBe("0px");
+    expect(Number.parseFloat(headingTick.dataset.waveX ?? "")).toBeLessThan(0);
     view.destroy();
   });
 
   // Themes key :has() rules on generic state classes (Baseline 4.0 watches .is-active);
   // toggling one while scrolling restyles the whole app on every heading change.
   it("marks scroll state only with rail-scoped class names", () => {
-    const { host, view } = mountStill();
+    const clock = makeViewEnvironment(true);
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    }, { environment: clock.environment });
+    setMetric(host.querySelector<HTMLElement>(".crisp-reading-rail__track")!, "clientHeight", 400);
     view.setOutline([
       { ...makeEntry(), progress: 0.2 },
       { ...makeEntry(), text: "Second", sourceLine: 9, progress: 0.6 },

@@ -1,6 +1,7 @@
 .crisp-reading-rail {
   --crisp-reading-accent: var(--interactive-accent);
   --crisp-reading-muted: color-mix(in srgb, var(--text-muted) 48%, transparent);
+  --crisp-reading-line-color: var(--text-faint);
   position: absolute;
   z-index: 0;
   top: calc(var(--header-height, 45px) + 18px);
@@ -27,6 +28,7 @@
   pointer-events: none;
 }
 
+.crisp-reading-rail.is-mobile .crisp-reading-rail__line,
 .crisp-reading-rail.is-mobile .crisp-reading-rail__ticks,
 .crisp-reading-rail.is-mobile .crisp-reading-rail__heading-ticks,
 .crisp-reading-rail.is-mobile .crisp-reading-rail__active,
@@ -68,6 +70,39 @@ body .crisp-reading-rail-mobile-scrollbar-hidden::-webkit-scrollbar {
   cursor: pointer;
 }
 
+.crisp-reading-rail .crisp-reading-rail__line {
+  position: absolute;
+  inset: 0 7px 0 auto;
+  width: 1px;
+  overflow: hidden;
+  contain: paint;
+  pointer-events: none;
+}
+
+.crisp-reading-rail .crisp-reading-rail__line::before {
+  content: none;
+}
+
+.crisp-reading-rail .crisp-reading-rail__line-focus {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 192px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--crisp-reading-line-color) 10%, transparent) 12%,
+    color-mix(in srgb, var(--crisp-reading-line-color) 34%, transparent) 28%,
+    color-mix(in srgb, var(--crisp-reading-line-color) 82%, transparent) 50%,
+    color-mix(in srgb, var(--crisp-reading-line-color) 34%, transparent) 72%,
+    color-mix(in srgb, var(--crisp-reading-line-color) 10%, transparent) 88%,
+    transparent 100%
+  );
+  opacity: 0.9;
+  pointer-events: none;
+}
+
 .crisp-reading-rail .crisp-reading-rail__ticks {
   position: absolute;
   inset: 0 7px 0 auto;
@@ -87,13 +122,22 @@ body .crisp-reading-rail-mobile-scrollbar-hidden::-webkit-scrollbar {
   border-radius: 999px;
   background: var(--crisp-reading-muted);
   opacity: 0.28;
-  transform: scaleX(var(--crisp-reading-tick-scale));
+  transform: translateX(var(--crisp-reading-wave-x, 0px))
+    scaleX(var(--crisp-reading-tick-scale));
   transform-origin: right center;
+  transition: opacity 110ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .crisp-reading-rail .crisp-reading-rail__tick--read {
   --crisp-reading-tick-scale: 0.64;
   opacity: 0.14;
+}
+
+/* One article switch or restored scroll position can move the read frontier across the
+   whole column. Snapping that frame keeps Chromium from building a layer per tick,
+   which would rebuild the pane's translucent backing layer and flash the window. */
+.crisp-reading-rail .crisp-reading-rail__ticks--snap .crisp-reading-rail__tick {
+  transition: none;
 }
 
 .crisp-reading-rail .crisp-reading-rail__heading-ticks {
@@ -112,8 +156,9 @@ body .crisp-reading-rail-mobile-scrollbar-hidden::-webkit-scrollbar {
   border-radius: 999px;
   background: var(--crisp-reading-muted);
   opacity: 0.56;
-  transform: translateY(-50%);
+  transform: translate(var(--crisp-reading-wave-x, 0px), -50%);
   transform-origin: right center;
+  transition: opacity 110ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .crisp-reading-rail .crisp-reading-rail__heading-tick[data-level="2"] {
@@ -249,6 +294,28 @@ body .crisp-reading-rail-mobile-scrollbar-hidden::-webkit-scrollbar {
   -webkit-user-drag: none;
 }
 
+@keyframes crisp-orb-celebrate {
+  0%,
+  100% {
+    scale: 1;
+    rotate: 0deg;
+  }
+
+  38% {
+    scale: 1.18;
+    rotate: -6deg;
+  }
+
+  72% {
+    scale: 0.96;
+    rotate: 4deg;
+  }
+}
+
+.crisp-reading-rail .crisp-reading-rail__orb.is-celebrating {
+  animation: crisp-orb-celebrate 240ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
 .crisp-reading-rail .crisp-reading-rail__orb:not([data-orb-style="default"]) {
   width: 18px;
   height: 18px;
@@ -345,6 +412,19 @@ body .crisp-reading-rail-mobile-scrollbar-hidden::-webkit-scrollbar {
 
 .crisp-reading-rail.is-attribute-driven .crisp-reading-rail__orb {
   transform: translateY(var(--crisp-reading-position)) translate(50%, -50%);
+}
+
+.crisp-reading-rail.is-attribute-driven .crisp-reading-rail__line-focus {
+  transform: translateY(calc(var(--crisp-reading-position) - 50%));
+}
+
+.crisp-reading-rail.is-attribute-driven .crisp-reading-rail__orb-media {
+  transform: rotate(attr(data-rotation type(<angle>), 0deg));
+}
+
+.crisp-reading-rail.is-attribute-driven .crisp-reading-rail__tick,
+.crisp-reading-rail.is-attribute-driven .crisp-reading-rail__heading-tick {
+  --crisp-reading-wave-x: attr(data-wave-x type(<length>), 0px);
 }
 
 .crisp-reading-rail .crisp-reading-rail__orb.is-dragging {
@@ -519,6 +599,11 @@ body .crisp-reading-rail-mobile-scrollbar-hidden::-webkit-scrollbar {
   box-shadow: 0 4px 16px rgb(0 0 0 / 6%);
 }
 
+.crisp-reading-rail .crisp-reading-rail__track:focus-visible
+  .crisp-reading-rail__line-focus {
+  opacity: 1;
+}
+
 .crisp-rr-setting-card {
   margin-bottom: 0.85rem;
   overflow: clip;
@@ -676,6 +761,8 @@ body .crisp-reading-rail-mobile-scrollbar-hidden::-webkit-scrollbar {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .crisp-reading-rail .crisp-reading-rail__tick,
+  .crisp-reading-rail .crisp-reading-rail__heading-tick,
   .crisp-reading-rail .crisp-reading-rail__label {
     transition: none;
   }
@@ -688,6 +775,10 @@ body .crisp-reading-rail-mobile-scrollbar-hidden::-webkit-scrollbar {
   .crisp-reading-rail .crisp-reading-rail__orb.is-dragging
     .crisp-reading-rail__orb-media {
     scale: 1;
+  }
+
+  .crisp-reading-rail .crisp-reading-rail__orb.is-celebrating {
+    animation: none;
   }
 
   .crisp-rr-setting-card,
