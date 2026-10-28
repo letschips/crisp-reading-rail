@@ -240,12 +240,13 @@ export class ReadingPaneRegistry {
             this.waypoints?.set(path, waypoints);
           }
         },
+        getFilePath: () => view.file?.path ?? null,
         getReadingMemory: () => {
           const path = view.file?.path;
           return path ? this.readingMemory?.get(path) ?? null : null;
         },
-        setReadingMemory: (memory) => {
-          const path = view.file?.path;
+        setReadingMemory: (memory, filePath) => {
+          const path = filePath ?? view.file?.path;
           if (path) {
             this.readingMemory?.set(path, memory);
           }

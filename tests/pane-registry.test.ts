@@ -19,6 +19,37 @@ function makeController() {
 }
 
 describe("ReadingPaneRegistry", () => {
+  it("stores reading memory under the note the controller read it in", () => {
+    const view = { file: { path: "a.md" }, getMode: () => "preview" as const };
+    const leaves = [{ view }] as unknown as WorkspaceLeaf[];
+    let options: ReadingRailControllerOptions | undefined;
+    const factory = (controllerOptions: ReadingRailControllerOptions) => {
+      options = controllerOptions;
+      return makeController();
+    };
+    const readingMemory = { get: vi.fn(() => null), set: vi.fn() };
+    const host = document.createElement("div");
+    const registry = new ReadingPaneRegistry(
+      {
+        workspace: { iterateAllLeaves: (callback) => leaves.forEach(callback) },
+        metadataCache: { getFileCache: () => ({ headings: [] }) },
+      },
+      {
+        isMarkdownView: (candidate: View): candidate is MarkdownView => "getMode" in candidate,
+        resolveElements: () => ({ host, scroller: host, preview: host }),
+        createController: factory,
+        readingMemory,
+      },
+    );
+    registry.reconcile();
+    view.file.path = "b.md";
+    expect(options?.getFilePath?.()).toBe("b.md");
+
+    const memory = { progress: 0.5, updatedAt: 1 };
+    options?.setReadingMemory?.(memory, "a.md");
+    expect(readingMemory.set).toHaveBeenCalledWith("a.md", memory);
+  });
+
   it("keeps a mounted rail alive when its leaf stops being the selected tab", () => {
     const views = ["one.md", "two.md"].map((path) => ({
       file: { path },

@@ -399,6 +399,97 @@ describe("ReadingRailController", () => {
     controller.destroy();
   });
 
+  // Obsidian reuses the pane's controller when a link or the file explorer opens another
+  // note in the same tab, so every per-file piece of reading memory must follow the file.
+  function makeTwoFileController() {
+    const { host, scroller } = makeFixture();
+    const clock = makeEnvironment();
+    const view = makeView();
+    const memories: Record<string, { progress: number; updatedAt: number }> = {
+      "a.md": { progress: 0.2, updatedAt: 1 },
+      "b.md": { progress: 0.7, updatedAt: 1 },
+    };
+    const file = { path: "a.md" };
+    const setReadingMemory = vi.fn();
+    const controller = new ReadingRailController({
+      host,
+      scroller,
+      preview: scroller,
+      getHeadings: () => [],
+      getFilePath: () => file.path,
+      getReadingMemory: () => memories[file.path] ?? null,
+      setReadingMemory,
+      environment: clock.environment,
+      createView: (_host, callbacks) => {
+        view.callbacks = callbacks;
+        return view;
+      },
+    });
+    controller.start();
+    clock.flushFrame();
+    const scrollTo = (top: number) => {
+      setMetric(scroller, "scrollTop", top);
+      scroller.dispatchEvent(new Event("scroll"));
+    };
+    return { controller, clock, view, file, setReadingMemory, scrollTo, scroller };
+  }
+
+  it("keeps a pending reading-memory save on the note it was read in", () => {
+    const { controller, clock, view, file, setReadingMemory, scrollTo } = makeTwoFileController();
+    expect(view.setResumeMarker).toHaveBeenLastCalledWith(0.2);
+
+    scrollTo(500);
+    file.path = "b.md";
+    // Opening the next note resets the scroll position before the rail refreshes.
+    scrollTo(0);
+    controller.refresh();
+    clock.flushTimers();
+
+    expect(view.setResumeMarker).toHaveBeenLastCalledWith(0.7);
+    expect(setReadingMemory).toHaveBeenCalledTimes(1);
+    expect(setReadingMemory).toHaveBeenCalledWith(
+      expect.objectContaining({ progress: 0.5 }),
+      "a.md",
+    );
+    controller.destroy();
+  });
+
+  it("does not overwrite a note's reading memory with the position it opened at", () => {
+    const {
+      controller,
+      clock,
+      file,
+      setReadingMemory,
+      scrollTo,
+      scroller,
+    } = makeTwoFileController();
+
+    scrollTo(500);
+    clock.flushTimers();
+    // Measured in Obsidian: the reset scroll arrives after view.file switches, before refresh.
+    file.path = "b.md";
+    scrollTo(0);
+    controller.refresh();
+    clock.flushTimers();
+
+    expect(setReadingMemory).toHaveBeenCalledTimes(1);
+    expect(setReadingMemory).toHaveBeenLastCalledWith(
+      expect.objectContaining({ progress: 0.5 }),
+      "a.md",
+    );
+
+    scrollTo(300);
+    clock.flushTimers();
+    expect(setReadingMemory).toHaveBeenCalledTimes(2);
+    expect(setReadingMemory).toHaveBeenLastCalledWith(
+      expect.objectContaining({ progress: 0.3 }),
+      "b.md",
+    );
+    controller.jumpToReadingMemory();
+    expect(scroller.scrollTop).toBe(700);
+    controller.destroy();
+  });
+
   it("coalesces scroll work, applies visibility rules, and cleans up", () => {
     const { host, scroller } = makeFixture();
     const clock = makeEnvironment();

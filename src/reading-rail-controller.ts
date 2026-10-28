@@ -137,8 +137,9 @@ export interface ReadingRailControllerOptions {
   getLineCount?(): number;
   getWaypoints?(): readonly (ReadingWaypoint | number)[];
   setWaypoints?(waypoints: readonly ReadingWaypoint[]): void;
+  getFilePath?(): string | null;
   getReadingMemory?(): ReadingMemory | null;
-  setReadingMemory?(memory: ReadingMemory): void;
+  setReadingMemory?(memory: ReadingMemory, filePath?: string): void;
   getOutlinePreferences?(): OutlinePreferences;
   appearance?: RailAppearanceProvider;
   sound?: RailSoundProvider;
@@ -176,8 +177,9 @@ export class ReadingRailController {
   private readonly getLineCount: () => number;
   private readonly getWaypoints: () => readonly (ReadingWaypoint | number)[];
   private readonly setWaypoints: (waypoints: readonly ReadingWaypoint[]) => void;
+  private readonly getFilePath: () => string | null;
   private readonly getReadingMemory: () => ReadingMemory | null;
-  private readonly setReadingMemory: (memory: ReadingMemory) => void;
+  private readonly setReadingMemory: (memory: ReadingMemory, filePath?: string) => void;
   private readonly getOutlinePreferences: () => OutlinePreferences;
   private readonly environment: RailControllerEnvironment;
   private readonly appearance?: RailAppearanceProvider;
@@ -202,6 +204,10 @@ export class ReadingRailController {
   private refreshTimer: number | null = null;
   private resizeRefreshTimer: number | null = null;
   private readingMemoryTimer: number | null = null;
+  private pendingMemorySample: ScrollSample | null = null;
+  // The note the resume marker and a pending reading-memory save belong to; undefined
+  // until the first refresh.
+  private memoryFilePath: string | null | undefined = undefined;
   private sessionResumeProgress: number | null = null;
   private resumeMarkerInitialized = false;
   private observedHostWidth = 0;
@@ -230,6 +236,7 @@ export class ReadingRailController {
     this.getLineCount = options.getLineCount ?? (() => 0);
     this.getWaypoints = options.getWaypoints ?? (() => []);
     this.setWaypoints = options.setWaypoints ?? (() => undefined);
+    this.getFilePath = options.getFilePath ?? (() => null);
     this.getReadingMemory = options.getReadingMemory ?? (() => null);
     this.setReadingMemory = options.setReadingMemory ?? (() => undefined);
     this.getOutlinePreferences = options.getOutlinePreferences ?? (() => ({
@@ -321,6 +328,7 @@ export class ReadingRailController {
     if (!this.started || this.destroyed || !this.view) {
       return;
     }
+    this.syncMemoryFile();
     if (!this.selected) {
       this.needsMeasurement = true;
       this.view.setVisible(false);
@@ -469,6 +477,7 @@ export class ReadingRailController {
       this.environment.clearTimeout(this.readingMemoryTimer);
       this.readingMemoryTimer = null;
     }
+    this.pendingMemorySample = null;
     this.resizeObserver?.disconnect();
     this.mutationObserver?.disconnect();
     this.resizeObserver = null;
@@ -492,31 +501,71 @@ export class ReadingRailController {
     // here keeps the frame from forcing another layout of that churn.
     this.scrollSample = this.readScrollSample();
     this.scheduleFrame(false);
-    this.scheduleReadingMemorySave();
+    this.scheduleReadingMemorySave(this.scrollSample);
   };
 
-  private scheduleReadingMemorySave(): void {
+  private scheduleReadingMemorySave(sample: ScrollSample): void {
+    // Opening another note in this tab resets the scroll position after view.file has
+    // switched but before the rail refreshes; that scroll is neither note's reading position.
+    if (this.memoryFilePath === undefined || this.getFilePath() !== this.memoryFilePath) {
+      return;
+    }
+    this.pendingMemorySample = sample;
     if (this.readingMemoryTimer !== null) {
       this.environment.clearTimeout(this.readingMemoryTimer);
     }
     this.readingMemoryTimer = this.environment.setTimeout(() => {
       this.readingMemoryTimer = null;
-      const progress = calculateProgress(
-        this.scroller.scrollTop,
-        this.scroller.scrollHeight,
-        this.scroller.clientHeight,
-      );
-      const marker = createSemanticMarker(progress, this.entries, Date.now());
-      this.setReadingMemory({
-        progress: marker.progress,
-        ...(marker.headingText !== undefined ? { headingText: marker.headingText } : {}),
-        ...(marker.headingLevel !== undefined ? { headingLevel: marker.headingLevel } : {}),
-        ...(marker.headingSourceLine !== undefined
-          ? { headingSourceLine: marker.headingSourceLine }
-          : {}),
-        updatedAt: Date.now(),
-      });
+      this.flushReadingMemory();
     }, READING_MEMORY_SAVE_DELAY);
+  }
+
+  private flushReadingMemory(): void {
+    if (this.readingMemoryTimer !== null) {
+      this.environment.clearTimeout(this.readingMemoryTimer);
+      this.readingMemoryTimer = null;
+    }
+    const pending = this.pendingMemorySample;
+    this.pendingMemorySample = null;
+    const filePath = this.memoryFilePath;
+    if (!pending || filePath === undefined) {
+      return;
+    }
+    // Still on the same note: read the live position, as rendering may have changed the
+    // scroll height since the last scroll. Otherwise the scroller already shows the next note.
+    const sample = this.getFilePath() === filePath ? this.readScrollSample() : pending;
+    const progress = calculateProgress(sample.top, sample.height, sample.client);
+    const marker = createSemanticMarker(progress, this.entries, Date.now());
+    const memory: ReadingMemory = {
+      progress: marker.progress,
+      ...(marker.headingText !== undefined ? { headingText: marker.headingText } : {}),
+      ...(marker.headingLevel !== undefined ? { headingLevel: marker.headingLevel } : {}),
+      ...(marker.headingSourceLine !== undefined
+        ? { headingSourceLine: marker.headingSourceLine }
+        : {}),
+      updatedAt: Date.now(),
+    };
+    if (filePath === null) {
+      this.setReadingMemory(memory);
+    } else {
+      this.setReadingMemory(memory, filePath);
+    }
+  }
+
+  /**
+   * Obsidian keeps this controller when a link or the file explorer opens another note in
+   * the same tab. Save what is pending for the previous note while the outline still
+   * describes it, then let the next refresh read the new note's resume marker.
+   */
+  private syncMemoryFile(): void {
+    const filePath = this.getFilePath();
+    if (filePath === this.memoryFilePath) {
+      return;
+    }
+    this.flushReadingMemory();
+    this.memoryFilePath = filePath;
+    this.resumeMarkerInitialized = false;
+    this.sessionResumeProgress = null;
   }
 
   private readonly handleManualNavigation = (): void => {
