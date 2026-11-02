@@ -395,6 +395,10 @@ class CrispReadingRailSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
+    const brandHeader = containerEl.createDiv({ cls: "crisp-brand-header" });
+    brandHeader.createEl("h2", { text: "Crisp Reading Rail" });
+    containerEl.createEl("p", { text: "读到哪，一眼就知道", cls: "crisp-brand-slogan" });
+
     const licenseGroup = createSettingGroup(
       containerEl,
       "软件授权",
