@@ -5,6 +5,9 @@ import type { LicenseVerifyResult } from "./license";
 const STATE = new WeakMap<object, boolean>();
 const EXPIRY = new WeakMap<object, number>();
 const LISTENERS = new WeakMap<object, (entitled: boolean) => void>();
+// Each owner trusts only the first gate registered for it. The gate class is reachable from
+// the console, so a second one built with a fake verifier must not reach this owner.
+const CLAIMS = new WeakMap<object, object>();
 
 function active(owner: object): boolean {
   if (STATE.get(owner) !== true) return false;
@@ -22,8 +25,9 @@ export function readingRailEntitled(owner: unknown): boolean {
   return active(owner as object);
 }
 
-/** Records a license check for this plugin and reports whether access changed. */
-export function applyEntitlement(owner: object, result: Pick<LicenseVerifyResult, "valid" | "payload">): boolean {
+/** Records a license check for this owner from its registered gate; reports whether access changed. */
+export function applyEntitlement(owner: object, by: object, result: Pick<LicenseVerifyResult, "valid" | "payload">): boolean {
+  if (CLAIMS.get(owner) !== by) return false;
   const before = active(owner);
   const valid = result.valid === true;
   STATE.set(owner, valid);
@@ -35,6 +39,10 @@ export function applyEntitlement(owner: object, result: Pick<LicenseVerifyResult
   return before !== after;
 }
 
-export function onEntitlementChange(owner: object, listener: (entitled: boolean) => void): void {
+/** Registers the gate that may report for this owner; false when another one already does. */
+export function claimEntitlement(owner: object, by: object, listener: (entitled: boolean) => void): boolean {
+  if (CLAIMS.has(owner)) return false;
+  CLAIMS.set(owner, by);
   LISTENERS.set(owner, listener);
+  return true;
 }

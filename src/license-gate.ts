@@ -1,5 +1,5 @@
 import type { LicenseVerifyResult } from "./license";
-import { applyEntitlement, onEntitlementChange, readingRailEntitled } from "./entitlement";
+import { applyEntitlement, claimEntitlement, readingRailEntitled } from "./entitlement";
 
 export type LicenseVerifier = (
   licenseCode: string,
@@ -7,7 +7,8 @@ export type LicenseVerifier = (
 ) => Promise<LicenseVerifyResult>;
 
 interface GateInternals {
-  owner: object;
+  /** null when another gate already reports for this owner: such a gate can grant nothing. */
+  owner: object | null;
   getCode: () => string;
   verify: LicenseVerifier;
   onChange: (licensed: boolean) => void;
@@ -17,6 +18,10 @@ interface GateInternals {
 // The verifier, owner and sequence live outside the instance, so swapping a field on the gate
 // cannot feed it a fake result. Access is recorded per owner in ./entitlement.
 const INTERNALS = new WeakMap<LicenseGate, GateInternals>();
+
+function grant(gate: LicenseGate, internals: GateInternals, result: LicenseVerifyResult): void {
+  if (internals.owner) applyEntitlement(internals.owner, gate, result);
+}
 
 /**
  * Every feature requires activation. The local signature check decides
@@ -30,16 +35,16 @@ export class LicenseGate {
     onChange: (licensed: boolean) => void,
     owner?: object,
   ) {
-    const internals: GateInternals = { owner: owner ?? this, getCode, verify, onChange, sequence: 0 };
-    INTERNALS.set(this, internals);
+    const target = owner ?? this;
     // An expiry passing mid-session reaches the plugin like any other change.
-    onEntitlementChange(internals.owner, (licensed) => internals.onChange(licensed));
+    const claimed = claimEntitlement(target, this, (licensed) => onChange(licensed));
+    INTERNALS.set(this, { owner: claimed ? target : null, getCode, verify, onChange, sequence: 0 });
   }
 
   /** Read-only view for settings and tests; features gate on readingRailEntitled(owner). */
   get licensed(): boolean {
     const internals = INTERNALS.get(this);
-    return !!internals && readingRailEntitled(internals.owner);
+    return !!internals?.owner && readingRailEntitled(internals.owner);
   }
 
   async refresh(online = true): Promise<LicenseVerifyResult> {
@@ -54,10 +59,10 @@ export class LicenseGate {
       return local;
     }
     if (!local.valid) {
-      applyEntitlement(internals.owner, local);
+      grant(this, internals, local);
       return local;
     }
-    applyEntitlement(internals.owner, local);
+    grant(this, internals, local);
     if (!online) {
       return local;
     }
@@ -67,7 +72,7 @@ export class LicenseGate {
       return remote;
     }
     if (!remote.valid) {
-      applyEntitlement(internals.owner, remote);
+      grant(this, internals, remote);
     }
     return remote;
   }

@@ -82,6 +82,16 @@ describe("LicenseGate", () => {
       expect(readingRailEntitled(owner)).toBe(false);
     });
 
+    it("a second gate built for the same owner with a fake verifier cannot grant it", async () => {
+      const owner = {};
+      const real = new LicenseGate(() => "", async () => ({ valid: false, reason: "bad" }), () => undefined, owner);
+      const Fake = real.constructor as typeof LicenseGate;
+      const fake = new Fake(() => "forged", async () => VALID, () => undefined, owner);
+      await fake.refresh(false);
+      expect(readingRailEntitled(owner)).toBe(false);
+      expect(real.licensed).toBe(false);
+    });
+
     it("locks again once the license payload expires", async () => {
       const owner = {};
       const soon: LicenseVerifyResult = { valid: true, payload: { ...VALID.payload!, expiresAt: new Date(Date.now() + 30).toISOString() } };
