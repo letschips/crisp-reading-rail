@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { LicenseGate } from "../src/license-gate";
 import type { LicenseVerifyResult } from "../src/license";
+import { readingRailEntitled } from "../src/entitlement";
 
 function makeGate(code: string, local: LicenseVerifyResult, online: LicenseVerifyResult) {
   const changes: boolean[] = [];
@@ -58,5 +59,40 @@ describe("LicenseGate", () => {
     await stale;
     expect(gate.licensed).toBe(true);
     expect(changes).toEqual([true]);
+  });
+
+  describe("hardening", () => {
+    const VALID: LicenseVerifyResult = { valid: true, payload: { product: "Crisp Suite", licenseId: "T", userName: "t", expiresAt: "2999-01-01T00:00:00Z", features: ["all"] } };
+
+    it("grants the owner only through a verified result", async () => {
+      const owner = {};
+      const gate = new LicenseGate(() => "code", async () => VALID, () => undefined, owner);
+      expect(readingRailEntitled(owner)).toBe(false);
+      await gate.refresh(false);
+      expect(readingRailEntitled(owner)).toBe(true);
+      expect(gate.licensed).toBe(true);
+    });
+
+    it("shadowing licensed or swapping the verifier on the instance does not grant the owner", async () => {
+      const owner = {};
+      const gate = new LicenseGate(() => "code", async () => ({ valid: false, reason: "bad" }), () => undefined, owner);
+      Object.defineProperty(gate, "licensed", { value: true });
+      (gate as unknown as { verify: unknown }).verify = async () => VALID;
+      await gate.refresh(false);
+      expect(readingRailEntitled(owner)).toBe(false);
+    });
+
+    it("locks again once the license payload expires", async () => {
+      const owner = {};
+      const soon: LicenseVerifyResult = { valid: true, payload: { ...VALID.payload!, expiresAt: new Date(Date.now() + 30).toISOString() } };
+      const changes: boolean[] = [];
+      const gate = new LicenseGate(() => "code", async () => soon, (licensed) => changes.push(licensed), owner);
+      await gate.refresh(false);
+      expect(readingRailEntitled(owner)).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(readingRailEntitled(owner)).toBe(false);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(changes).toEqual([true, false]);
+    });
   });
 });

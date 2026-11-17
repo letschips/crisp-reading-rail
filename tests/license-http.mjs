@@ -40,7 +40,7 @@ function loadVerifier(scenario) {
   class EmptyBase {}
   const context = {
     module, exports: module.exports, atob, btoa, TextEncoder, TextDecoder, Buffer,
-    crypto: webcrypto, console: { debug() {}, log() {}, warn() {}, error() {} },
+    crypto: scenario.crypto ?? webcrypto, console: { debug() {}, log() {}, warn() {}, error() {} },
     setTimeout(fn, ms) {
       const timer = setTimeout(fn, ms === 2500 ? 10 : ms);
       timers.add(timer);
@@ -110,3 +110,22 @@ for (const kind of ['expired', 'bad signature']) {
     } finally { verifier.cleanup(); }
   });
 }
+
+// WebCrypto is captured at load (0.6.3+): a console patch of crypto.subtle cannot pass a forged code.
+test('replacing crypto.subtle.verify after load cannot pass a forged code', async () => {
+  const subtle = { importKey: webcrypto.subtle.importKey.bind(webcrypto.subtle), verify: webcrypto.subtle.verify.bind(webcrypto.subtle) };
+  const verifier = loadVerifier({ network: true, crypto: { subtle, getRandomValues: a => webcrypto.getRandomValues(a) } });
+  try {
+    subtle.verify = async () => true;
+    const forged = `${makeCode().split('.')[0]}.${Buffer.alloc(64, 7).toString('base64url')}`;
+    assert.equal((await verifier.verify(forged)).valid, false);
+    assert.equal((await verifier.verify(makeCode())).valid, true, 'a genuine code still works');
+  } finally { verifier.cleanup(); }
+});
+test('a verifier that accepts everything at load disables activation', async () => {
+  const subtle = { importKey: webcrypto.subtle.importKey.bind(webcrypto.subtle), verify: async () => true };
+  const verifier = loadVerifier({ network: true, crypto: { subtle, getRandomValues: a => webcrypto.getRandomValues(a) } });
+  try {
+    assert.equal((await verifier.verify(makeCode())).valid, false);
+  } finally { verifier.cleanup(); }
+});

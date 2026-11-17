@@ -27,6 +27,7 @@ import {
   type LicenseVerifyResult,
 } from "./license";
 import { LicenseGate } from "./license-gate";
+import { readingRailEntitled } from "./entitlement";
 import { preserveUnreadableData, verifyDataWrite } from "./data-safety";
 import {
   READING_RAIL_SOUND_STYLE_OPTIONS,
@@ -78,11 +79,12 @@ export default class CrispReadingRailPlugin extends Plugin {
   private readonly licenseGate = new LicenseGate(
     () => this.settings.licenseCode,
     (code, skipOnline) => verifyLicenseCode(code, LICENSE_PLUGIN_ID, skipOnline),
-    (licensed) => this.applyLicensed(licensed),
+    () => this.applyLicensed(),
+    this,
   );
 
   get licensed(): boolean {
-    return this.licenseGate.licensed;
+    return readingRailEntitled(this);
   }
 
   async refreshLicense(online = true, notify = false): Promise<LicenseVerifyResult> {
@@ -94,15 +96,16 @@ export default class CrispReadingRailPlugin extends Plugin {
   }
 
   private requireLicense(action: () => unknown): void {
-    if (!this.licensed) {
+    if (!readingRailEntitled(this)) {
       new Notice("🔒 Crisp Reading Rail 未激活，请在插件设置中输入授权码");
       return;
     }
     void action();
   }
 
-  private applyLicensed(licensed: boolean): void {
-    if (!licensed) {
+  // Re-reads the module gate instead of trusting its caller, so calling it from outside cannot unlock.
+  private applyLicensed(): void {
+    if (!readingRailEntitled(this)) {
       this.cancelReconcile();
       this.registry?.destroy();
       this.registry = null;
@@ -114,6 +117,9 @@ export default class CrispReadingRailPlugin extends Plugin {
   }
 
   private createRegistry(): void {
+    if (!readingRailEntitled(this)) {
+      return;
+    }
     this.registry = new ReadingPaneRegistry(this.app, {
       appearance: {
         getOrbStyle: () => this.settings.orbStyle,
@@ -272,6 +278,10 @@ export default class CrispReadingRailPlugin extends Plugin {
   }
 
   private scheduleReconcile(): void {
+    if (this.registry && !readingRailEntitled(this)) {
+      this.applyLicensed();
+      return;
+    }
     if (this.unloaded || !this.registry || this.reconcileFrame !== null) {
       return;
     }
@@ -411,9 +421,9 @@ class CrispReadingRailSettingTab extends PluginSettingTab {
       .setDesc("正在验证授权状态...");
 
     if (this.plugin.settings.licenseCode) {
-      const wasLicensed = this.plugin.licensed;
+      const wasLicensed = readingRailEntitled(this.plugin);
       this.plugin.refreshLicense(true).then((verifyRes) => {
-        if (wasLicensed !== this.plugin.licensed) {
+        if (wasLicensed !== readingRailEntitled(this.plugin)) {
           this.display();
           return;
         }
@@ -435,9 +445,9 @@ class CrispReadingRailSettingTab extends PluginSettingTab {
           clearLicenseVerificationCache();
           this.plugin.settings.licenseCode = value.trim();
           await this.plugin.saveSettings();
-          const wasLicensed = this.plugin.licensed;
+          const wasLicensed = readingRailEntitled(this.plugin);
           await this.plugin.refreshLicense(false);
-          if (wasLicensed !== this.plugin.licensed) {
+          if (wasLicensed !== readingRailEntitled(this.plugin)) {
             this.display();
           }
         }))
@@ -458,7 +468,7 @@ class CrispReadingRailSettingTab extends PluginSettingTab {
           }
         }));
 
-    if (!this.plugin.licensed) {
+    if (!readingRailEntitled(this.plugin)) {
       createAboutCard(
         containerEl,
         "Crisp Reading Rail",
