@@ -21,8 +21,10 @@ import {
 import type { ReadingMemory, ReadingWaypoint } from "./types";
 import { createAboutCard, createSettingGroup } from "./settings-ui";
 import {
+  adoptSiblingLicense,
   clearLicenseVerificationCache,
   describeLicenseStatus,
+  normalizeLicenseCode,
   verifyLicenseCode,
   type LicenseVerifyResult,
 } from "./license";
@@ -93,6 +95,22 @@ export default class CrispReadingRailPlugin extends Plugin {
       new Notice(`🔒 Crisp Reading Rail 未激活（${result.reason || "授权码无效"}），请在插件设置中输入授权码`);
     }
     return result;
+  }
+
+  // Runs once after startup. A sibling's code is only saved here; refreshLicense then verifies it
+  // and sets the gate, so there is no separate way to switch the plugin on.
+  private async inheritSiblingLicense(): Promise<void> {
+    const adopted = await adoptSiblingLicense({
+      app: this.app,
+      targetPluginId: LICENSE_PLUGIN_ID,
+      getCode: () => this.settings.licenseCode,
+      persistCode: async (code) => {
+        this.settings.licenseCode = code;
+        await this.saveSettings();
+      },
+      isStale: () => this.unloaded,
+    });
+    if (adopted && !this.unloaded) await this.refreshLicense(true);
   }
 
   private requireLicense(action: () => unknown): void {
@@ -221,9 +239,11 @@ export default class CrispReadingRailPlugin extends Plugin {
         return;
       }
       this.layoutReady = true;
-      void this.refreshLicense(true, true).catch((error) => {
-        console.debug("Crisp Reading Rail license check failed", error);
-      });
+      void this.refreshLicense(true, true)
+        .then(() => this.inheritSiblingLicense())
+        .catch((error) => {
+          console.debug("Crisp Reading Rail license check failed", error);
+        });
 
       const scheduleReconcile = (): void => this.scheduleReconcile();
       this.registerEvent(this.app.workspace.on("layout-change", scheduleReconcile));
@@ -443,7 +463,7 @@ class CrispReadingRailSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.licenseCode)
         .onChange(async (value) => {
           clearLicenseVerificationCache();
-          this.plugin.settings.licenseCode = value.trim();
+          this.plugin.settings.licenseCode = normalizeLicenseCode(value);
           await this.plugin.saveSettings();
           const wasLicensed = readingRailEntitled(this.plugin);
           await this.plugin.refreshLicense(false);

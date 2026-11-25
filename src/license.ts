@@ -45,6 +45,17 @@ export const CRISP_LICENSE_PRODUCTS = [
   "Crisp Base",
 ] as const;
 
+/**
+ * Chat apps mangle long codes when they are copied: line breaks, spaces (incl. full-width/NBSP),
+ * zero-width characters, and surrounding text such as "卡密：…。". Returns the bare code.
+ */
+export function normalizeLicenseCode(input: unknown): string {
+  if (typeof input !== "string") return "";
+  const compact = input.replace(/[\s\u200B-\u200D\u2060\uFEFF]/g, "");
+  const match = compact.match(/[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/);
+  return match ? match[0] : compact;
+}
+
 export function createLicenseVerificationCache(
   ttlMs: number,
   now: () => number = Date.now,
@@ -178,7 +189,7 @@ export async function verifyLicenseCode(
   targetPluginId: string = "crisp-reading-rail",
   skipOnline: boolean = false,
 ): Promise<LicenseVerifyResult> {
-  const trimmed = licenseCode.trim();
+  const trimmed = normalizeLicenseCode(licenseCode);
   if (skipOnline) {
     return verifyLicenseCodeUncached(trimmed, targetPluginId, true);
   }
@@ -192,7 +203,7 @@ async function verifyLicenseCodeUncached(
   targetPluginId: string,
   skipOnline: boolean = false,
 ): Promise<LicenseVerifyResult> {
-  const trimmed = licenseCode.trim();
+  const trimmed = normalizeLicenseCode(licenseCode);
   if (!trimmed) {
     return { valid: false, reason: "授权码为空" };
   }
@@ -313,4 +324,108 @@ async function verifyLicenseCodeUncached(
     const msg = error instanceof Error ? error.message : String(error);
     return { valid: false, reason: `解析授权码失败: ${msg}` };
   }
+}
+
+// Every paid Crisp plugin; a module constant so nothing on a plugin instance can widen the scan.
+const CRISP_SIBLING_PLUGIN_IDS = [
+  "crisp-annotations", "crisp-asr", "crisp-base", "crisp-file-explorer", "crisp-focus", "crisp-mind",
+  "crisp-pets", "crisp-pulse", "crisp-reading-rail", "crisp-recall", "crisp-ripple", "crisp-search",
+  "crisp-tempo", "crisp-visual",
+] as const;
+
+interface VaultLike {
+  plugins?: { plugins?: Record<string, { settings?: Record<string, unknown>; data?: Record<string, unknown> } | undefined> };
+  vault?: {
+    configDir?: string;
+    adapter?: {
+      exists(path: string): Promise<boolean>;
+      list?(path: string): Promise<{ folders?: string[] }>;
+      read(path: string): Promise<string>;
+    };
+  };
+}
+
+/** Codes saved by sibling Crisp plugins in this vault that pass the local signature check (read-only scan). */
+export async function discoverVaultCrispLicenses(
+  app: VaultLike | null | undefined,
+  targetPluginId: string = "crisp-reading-rail",
+  limit = 5,
+): Promise<string[]> {
+  if (!app) return [];
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  const add = (code: unknown): void => {
+    const clean = normalizeLicenseCode(code);
+    if (!clean.includes(".") || seen.has(clean)) return;
+    seen.add(clean);
+    candidates.push(clean);
+  };
+  for (const pid of CRISP_SIBLING_PLUGIN_IDS) {
+    if (pid === targetPluginId) continue;
+    const p = app.plugins?.plugins?.[pid];
+    add(p?.settings?.licenseCode);
+    add(p?.settings?.licenseKey);
+    add(p?.data?.licenseCode);
+    add(p?.data?.licenseKey);
+  }
+  try {
+    const adapter = app.vault?.adapter;
+    if (adapter && typeof adapter.list === "function") {
+      const pluginsDir = `${app.vault?.configDir || ".obsidian"}/plugins`;
+      if (await adapter.exists(pluginsDir)) {
+        const listing = await adapter.list(pluginsDir);
+        for (const folder of listing.folders || []) {
+          const name = folder.split("/").pop() || "";
+          if (!name.startsWith("crisp-") || name === targetPluginId) continue;
+          const dataPath = `${folder}/data.json`;
+          if (!(await adapter.exists(dataPath))) continue;
+          try {
+            const data = JSON.parse(await adapter.read(dataPath)) as Record<string, unknown> | null;
+            add(data?.licenseCode || data?.licenseKey || data?.license);
+          } catch {
+            // a damaged data.json of another plugin is skipped
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.debug("Crisp Reading Rail license scan error:", error);
+  }
+  const valid: string[] = [];
+  for (const code of candidates) {
+    if (valid.length >= limit) break;
+    if ((await verifyLicenseCode(code, targetPluginId, true)).valid) valid.push(code);
+  }
+  return valid;
+}
+
+export interface AdoptSiblingLicenseDeps {
+  app: VaultLike | null | undefined;
+  targetPluginId?: string;
+  getCode: () => string;
+  persistCode: (code: string) => Promise<void>;
+  isStale: () => boolean;
+}
+
+/**
+ * Startup, once: when the stored code is empty or no longer passes the online check, take the first
+ * sibling code that passes online and hand it to `persistCode`. Returns the adopted code or null.
+ * It only saves; the caller re-runs the normal license check, which is what actually grants access.
+ */
+export async function adoptSiblingLicense(deps: AdoptSiblingLicenseDeps): Promise<string | null> {
+  const targetPluginId = deps.targetPluginId ?? "crisp-reading-rail";
+  const own = deps.getCode();
+  if (own && (await verifyLicenseCode(own, targetPluginId)).valid) return null;
+  const ownClean = normalizeLicenseCode(own);
+  for (const candidate of await discoverVaultCrispLicenses(deps.app, targetPluginId)) {
+    if (deps.isStale()) return null;
+    if (candidate === ownClean) continue;
+    const result = await verifyLicenseCode(candidate, targetPluginId);
+    if (deps.isStale()) return null;
+    if (!result.valid) continue;
+    if (deps.getCode() !== own) return null;
+    await deps.persistCode(candidate);
+    return candidate;
+  }
+  return null;
 }

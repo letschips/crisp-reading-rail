@@ -1,4 +1,4 @@
-import type { LicenseVerifyResult } from "./license";
+import { normalizeLicenseCode, type LicenseVerifyResult } from "./license";
 import { applyEntitlement, claimEntitlement, readingRailEntitled } from "./entitlement";
 
 export type LicenseVerifier = (
@@ -51,7 +51,7 @@ export class LicenseGate {
     const internals = INTERNALS.get(this);
     if (!internals) return { valid: false, reason: "授权码为空" };
     const sequence = ++internals.sequence;
-    const code = internals.getCode().trim();
+    const code = normalizeLicenseCode(internals.getCode());
     const local: LicenseVerifyResult = code
       ? await internals.verify(code, true)
       : { valid: false, reason: "授权码为空" };

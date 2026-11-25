@@ -1,3 +1,4 @@
+import { normalizeLicenseCode } from "./license";
 import { normalizeOrbStyle, type OrbStyleSetting } from "./orb-styles";
 import {
   normalizeSoundStyle,
@@ -259,6 +260,6 @@ export function normalizeSettings(value: unknown): CrispReadingRailSettings {
     readingMemory: normalizeReadingMemoryMap(candidate.readingMemory),
     outlineMaxLevel: normalizeOutlineMaxLevel(candidate.outlineMaxLevel),
     outlineScope: normalizeOutlineScope(candidate.outlineScope),
-    licenseCode: typeof candidate.licenseCode === "string" ? candidate.licenseCode.trim() : "",
+    licenseCode: normalizeLicenseCode(candidate.licenseCode),
   };
 }
