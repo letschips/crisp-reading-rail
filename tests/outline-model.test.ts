@@ -3,6 +3,7 @@ import {
   activeHeadingIndex,
   buildOutlineEntries,
   labelListOverflows,
+  outlineTopLevel,
   resolveLabelPositions,
   resolveVariableLabelPositions,
 } from "../src/outline-model";
@@ -25,6 +26,34 @@ describe("outline model", () => {
       ["First", 2, 0.1],
       ["Detail", 3, 0.16],
     ]);
+  });
+
+  it("indexes H1 chapters only when a note has more than one H1", () => {
+    const chapters = [
+      { text: "One", level: 1, sourceLine: 0 },
+      { text: "One a", level: 2, sourceLine: 2 },
+      { text: "Two", level: 1, sourceLine: 4 },
+    ];
+    const rendered = chapters.map((heading, index) => ({
+      text: heading.text,
+      level: heading.level,
+      documentY: 100 + index * 100,
+      target: {} as HTMLElement,
+    }));
+    expect(outlineTopLevel(chapters)).toBe(1);
+    expect(outlineTopLevel(headings)).toBe(2);
+    expect(buildOutlineEntries(chapters, rendered, 100, 1000).map((entry) => entry.text))
+      .toEqual(["One", "One a", "Two"]);
+  });
+
+  it("ignores a rendered title H1 when pairing headings", () => {
+    const rendered = [
+      { text: "Title", level: 1, documentY: 120, target: {} as HTMLElement },
+      { text: "First", level: 2, documentY: 200, target: {} as HTMLElement },
+      { text: "Detail", level: 3, documentY: 260, target: {} as HTMLElement },
+    ];
+    expect(buildOutlineEntries(headings, rendered, 100, 1000).map((entry) => entry.text))
+      .toEqual(["First", "Detail"]);
   });
 
   it("omits a mismatched rendered target instead of guessing", () => {

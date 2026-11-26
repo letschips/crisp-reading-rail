@@ -10,7 +10,7 @@ function renderedHeadingText(heading: HTMLElement): string {
 
 export function collectRenderedHeadings(container: HTMLElement): RenderedHeading[] {
   const containerTop = container.getBoundingClientRect().top;
-  return Array.from(container.querySelectorAll<HTMLElement>("h2, h3, h4"))
+  return Array.from(container.querySelectorAll<HTMLElement>("h1, h2, h3, h4"))
     .filter((heading) => !heading.closest(".internal-embed, .markdown-embed"))
     .map((heading) => ({
       text: renderedHeadingText(heading),

@@ -151,6 +151,95 @@ describe("ReadingRailView", () => {
     expect(host.querySelectorAll(".crisp-reading-rail__heading-tick")).toHaveLength(4);
   });
 
+  it("folds a dense outline to chapters plus the chapter being read", () => {
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    });
+    const track = host.querySelector<HTMLElement>(".crisp-reading-rail__track")!;
+    setMetric(track, "clientHeight", 60);
+    const entries = [
+      { ...makeEntry(), text: "Intro detail", level: 2, sourceLine: 0, progress: 0 },
+      { ...makeEntry(), text: "One", level: 1, sourceLine: 1, progress: 0.1 },
+      { ...makeEntry(), text: "One a", level: 2, sourceLine: 2, progress: 0.2 },
+      { ...makeEntry(), text: "Two", level: 1, sourceLine: 3, progress: 0.6 },
+      { ...makeEntry(), text: "Two a", level: 2, sourceLine: 4, progress: 0.7 },
+      { ...makeEntry(), text: "Two a i", level: 3, sourceLine: 5, progress: 0.8 },
+    ];
+    view.setOutline(entries, 20);
+    view.setActiveHeading(4);
+
+    const root = host.querySelector<HTMLElement>(".crisp-reading-rail")!;
+    const labels = [...host.querySelectorAll<HTMLButtonElement>(
+      ".crisp-reading-rail__label",
+    )];
+    expect(root.classList.contains("is-dense")).toBe(true);
+    expect(labels.map((label) => label.dataset.depth)).toEqual(["1", "0", "1", "0", "1", "2"]);
+    expect(labels.map((label) => label.hidden)).toEqual([false, false, true, false, false, false]);
+
+    view.setActiveHeading(2);
+    expect(labels.map((label) => label.hidden)).toEqual([false, false, false, false, true, true]);
+  });
+
+  it("stays dense after folding even though folded labels measure as zero", () => {
+    const originalBounds = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this.classList.contains("crisp-reading-rail__label")) {
+        // The dense list restyles labels, so they measure differently there.
+        const dense = this.closest(".crisp-reading-rail")?.classList.contains("is-dense");
+        const height = this.hidden ? 0 : dense ? 4 : 20;
+        return { top: 0, left: 0, right: 100, bottom: height, width: 100, height,
+          x: 0, y: 0, toJSON: () => ({}) };
+      }
+      return originalBounds.call(this);
+    });
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    });
+    const track = host.querySelector<HTMLElement>(".crisp-reading-rail__track")!;
+    setMetric(track, "clientHeight", 120);
+    const entries = Array.from({ length: 8 }, (_, index) => ({
+      ...makeEntry(),
+      text: `H ${index}`,
+      level: index % 4 === 0 ? 2 : 3,
+      sourceLine: index,
+      progress: index / 8,
+    }));
+    view.setOutline(entries, 20);
+    view.setActiveHeading(1);
+    const root = host.querySelector<HTMLElement>(".crisp-reading-rail")!;
+    expect(root.classList.contains("is-dense")).toBe(true);
+    // A later refresh with the same outline re-measures while labels are folded.
+    view.setOutline(entries, 20);
+    expect(root.classList.contains("is-dense")).toBe(true);
+    vi.restoreAllMocks();
+  });
+
+  it("roots the current branch at H1 when the note uses H1 chapters", () => {
+    const host = document.createElement("div");
+    const view = ReadingRailView.mount(host, {
+      onHeadingSelect: vi.fn(),
+      onProgressSelect: vi.fn(),
+    });
+    view.setOutline([
+      { ...makeEntry(), text: "One", level: 1, sourceLine: 1, progress: 0.1 },
+      { ...makeEntry(), text: "One a", level: 2, sourceLine: 2, progress: 0.2 },
+      { ...makeEntry(), text: "Two", level: 1, sourceLine: 3, progress: 0.6 },
+      { ...makeEntry(), text: "Two a", level: 2, sourceLine: 4, progress: 0.7 },
+    ], 20);
+    view.setOutlineScope("currentH2");
+    view.setActiveHeading(3);
+    const labels = [...host.querySelectorAll<HTMLButtonElement>(
+      ".crisp-reading-rail__label",
+    )];
+    expect(labels.map((label) => label.hidden)).toEqual([true, true, false, false]);
+  });
+
   it("pins locally and supports P Escape J K keyboard controls", () => {
     vi.useFakeTimers();
     const host = document.createElement("div");

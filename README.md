@@ -174,7 +174,7 @@ License validation checks the Ed25519 signature, product, feature permission, an
 
 ## Known exclusions
 
-The plugin does not support Live Preview, Source mode, native Outline replacement, embedded-note headings, or H1/H5/H6 navigation. Mobile layouts show only the progress-following orb; outline labels and rail navigation are desktop-only.
+The plugin does not support Live Preview, Source mode, native Outline replacement, embedded-note headings, or H5/H6 navigation. A single H1 is treated as the note title and left out; notes with two or more H1 chapters get H1 entries too. Mobile layouts show only the progress-following orb; outline labels and rail navigation are desktop-only.
 
 ## Development
 

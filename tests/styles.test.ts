@@ -112,6 +112,24 @@ describe("Crisp Reading Rail styles", () => {
     root.remove();
   });
 
+  it("really hides folded and off-branch labels in both layouts", () => {
+    const styleElement = document.createElement("style");
+    styleElement.textContent = css;
+    document.head.append(styleElement);
+    for (const className of ["crisp-reading-rail", "crisp-reading-rail is-dense"]) {
+      const root = document.createElement("div");
+      root.className = className;
+      const label = document.createElement("button");
+      label.className = "crisp-reading-rail__label";
+      label.hidden = true;
+      root.append(label);
+      document.body.append(root);
+      expect(getComputedStyle(label).display).toBe("none");
+      root.remove();
+    }
+    styleElement.remove();
+  });
+
   it("uses compositor-safe settings groups without animated layout properties", () => {
     expect(css).toContain(".crisp-rr-setting-card");
     expect(css).not.toContain("grid-template-rows");

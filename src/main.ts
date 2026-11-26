@@ -606,7 +606,7 @@ class CrispReadingRailSettingTab extends PluginSettingTab {
     const description = outlineBody.ownerDocument.createElement("p");
     description.className = "setting-item-description";
     description.textContent = [
-      "轨道索引阅读视图中的 H2–H4 标题。",
+      "轨道索引阅读视图中的 H2–H4 标题；笔记用多个 H1 分章时，H1 也一并索引。",
       "双击轨道，或聚焦轨道后按 M，可为当前笔记保存阅读书签。",
       "右键书签（或聚焦后按 Delete）可删除。",
       "按 P 固定/释放展开大纲，Esc 释放并收起，J/K 跳到下一个/上一个标题。",

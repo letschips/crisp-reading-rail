@@ -5,20 +5,40 @@ import type {
   RenderedHeading,
 } from "./types";
 
-const MIN_LEVEL = 2;
 const MAX_LEVEL = 4;
+
+/**
+ * The highest heading level the outline indexes. A single H1 is the note's title and
+ * stays out of the outline, but notes that split their body into several H1 chapters
+ * would otherwise lose every chapter and leave their H2s floating without a parent.
+ */
+export function outlineTopLevel(headings: readonly { level: number }[]): number {
+  let h1Count = 0;
+  for (const heading of headings) {
+    if (heading.level === 1) {
+      h1Count += 1;
+      if (h1Count >= 2) {
+        return 1;
+      }
+    }
+  }
+  return 2;
+}
 
 export function buildOutlineEntries(
   headings: readonly OutlineHeading[],
-  rendered: readonly RenderedHeading[],
+  allRendered: readonly RenderedHeading[],
   contentTop: number,
   maxScroll: number,
   sourceLineCount?: number,
   knownDocumentY?: ReadonlyMap<number, number>,
 ): OutlineEntry[] {
+  const minLevel = outlineTopLevel(headings);
   const eligible = headings.filter(
-    (heading) => heading.level >= MIN_LEVEL && heading.level <= MAX_LEVEL,
+    (heading) => heading.level >= minLevel && heading.level <= MAX_LEVEL,
   );
+  // The rendered title H1 must not shift the index pairing below.
+  const rendered = allRendered.filter((heading) => heading.level >= minLevel);
   const virtualized = sourceLineCount !== undefined
     && sourceLineCount > 1
     && rendered.length < eligible.length;

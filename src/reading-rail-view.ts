@@ -132,6 +132,8 @@ export class ReadingRailView {
   private headingTickWaveOffsets: number[] = [];
   private headingTickWaveActiveIndices = new Set<number>();
   private labels: HTMLButtonElement[] = [];
+  private naturalLabelHeights: number[] = [];
+  private naturalHeightsWidth = 0;
   private waypointButtons: HTMLButtonElement[] = [];
   private waypoints: ReadingWaypoint[] = [];
   private lastWaypointRenderKey = "";
@@ -139,6 +141,8 @@ export class ReadingRailView {
   private entries: OutlineEntry[] = [];
   private activeHeadingIndex = -1;
   private outlineScope: OutlineScope = "all";
+  /** Level of the outermost entries; the "current H2" branch roots at this level. */
+  private topLevel = 2;
   private lastLabelBranchKey = "";
   private pinned = false;
   private lastReadTickIndex = Number.MIN_SAFE_INTEGER;
@@ -362,12 +366,18 @@ export class ReadingRailView {
     );
     this.headingTickWaveActiveIndices.clear();
 
+    this.topLevel = this.entries.reduce(
+      (minimum, entry) => Math.min(minimum, entry.level),
+      Number.POSITIVE_INFINITY,
+    );
     this.labels = this.entries.map((entry, index) => {
       const label = document.createElement("button");
       label.type = "button";
       label.className = "crisp-reading-rail__label";
       label.textContent = entry.text;
-      label.style.setProperty("--crisp-reading-level", String(entry.level - 2));
+      const depth = entry.level - this.topLevel;
+      label.dataset.depth = String(depth);
+      label.style.setProperty("--crisp-reading-level", String(depth));
       label.addEventListener("click", (event) => {
         const currentEntry = this.entries[index];
         if (currentEntry) {
@@ -382,6 +392,7 @@ export class ReadingRailView {
       return label;
     });
     this.labelsContainer.replaceChildren(...this.labels);
+    this.naturalLabelHeights = [];
     this.activeHeadingIndex = -1;
     this.lastLabelBranchKey = "";
     this.lastReadTickIndex = Number.MIN_SAFE_INTEGER;
@@ -481,6 +492,9 @@ export class ReadingRailView {
       this.cancelCollapse();
     }
     this.root.classList.toggle("is-expanded", expanded);
+    if (expanded && this.needsLabelLayout) {
+      this.measureLayout();
+    }
   }
 
   togglePinned(): boolean {
@@ -608,13 +622,16 @@ export class ReadingRailView {
     this.headingTickYPositions = this.entries.map((entry) => (
       clamp01(entry.progress) * this.trackHeight
     ));
-    const labelHeights = this.labels.map((label) => (
-      label.getBoundingClientRect().height || label.scrollHeight || 20
-    ));
+    // Density is judged on each label's height in the regular layout. Folding hides
+    // labels and the dense list restyles them, so measuring those would make the list
+    // "fit" again, unfold, overflow, and flip back and forth.
+    const labelHeights = this.naturalHeights();
+    const unmeasured = labelHeights.some((height) => height === null);
+    const fallbackHeights = labelHeights.map((height) => height ?? 20);
     const dense = labelListOverflows(
       this.entries,
       this.trackHeight,
-      labelHeights,
+      fallbackHeights,
       LABEL_GAP,
     );
     if (dense !== this.labelListDense) {
@@ -623,6 +640,7 @@ export class ReadingRailView {
       if (!dense) {
         this.labelsContainer.scrollTop = 0;
       }
+      this.updateLabelBranch();
     }
     if (dense) {
       this.labels.forEach((label) => {
@@ -637,7 +655,7 @@ export class ReadingRailView {
       const resolved = resolveVariableLabelPositions(
         this.entries,
         this.trackHeight,
-        labelHeights,
+        fallbackHeights,
         LABEL_GAP,
       );
       this.labels.forEach((label, index) => {
@@ -646,10 +664,56 @@ export class ReadingRailView {
           `${resolved[index]?.labelY ?? 0}px`,
         );
       });
-      this.applyLabelAnchors(resolved, labelHeights);
+      this.applyLabelAnchors(resolved, fallbackHeights);
     }
     this.targetPosition = this.currentProgress * this.trackHeight;
-    this.needsLabelLayout = false;
+    // Right after a pane opens the labels can report no size yet; the guess above is
+    // only provisional, so measure again when the outline is actually shown.
+    this.needsLabelLayout = unmeasured;
+  }
+
+  /**
+   * Each label's height in the regular (unfolded, non-dense) layout, cached per outline.
+   * Missing entries are measured by switching dense and folding off for one synchronous
+   * read, which never paints. Null means the label could not be measured yet.
+   */
+  private naturalHeights(): Array<number | null> {
+    // Label width follows the window (min(240px, 30vw)), and wrapping follows the width.
+    const width = this.window.innerWidth;
+    if (width !== this.naturalHeightsWidth) {
+      this.naturalHeightsWidth = width;
+      this.naturalLabelHeights = [];
+    }
+    if (this.labels.every((_, index) => this.naturalLabelHeights[index] !== undefined)) {
+      return this.labels.map((_, index) => this.naturalLabelHeights[index]);
+    }
+    const wasDense = this.root.classList.contains("is-dense");
+    const hiddenLabels = this.labels.filter((label) => label.hidden);
+    if (wasDense) {
+      this.root.classList.remove("is-dense");
+    }
+    hiddenLabels.forEach((label) => {
+      label.hidden = false;
+    });
+    const heights = this.labels.map((label, index) => {
+      const cached = this.naturalLabelHeights[index];
+      if (cached !== undefined) {
+        return cached;
+      }
+      const height = label.getBoundingClientRect().height || label.scrollHeight;
+      if (height > 0) {
+        this.naturalLabelHeights[index] = height;
+        return height;
+      }
+      return null;
+    });
+    hiddenLabels.forEach((label) => {
+      label.hidden = true;
+    });
+    if (wasDense) {
+      this.root.classList.add("is-dense");
+    }
+    return heights;
   }
 
   /**
@@ -948,6 +1012,9 @@ export class ReadingRailView {
   private expandNow(): void {
     this.cancelCollapse();
     this.root.classList.add("is-expanded");
+    if (this.needsLabelLayout) {
+      this.measureLayout();
+    }
   }
 
   private scheduleCollapse(): void {
@@ -1288,7 +1355,10 @@ export class ReadingRailView {
   }
 
   private updateLabelBranch(): boolean {
-    if (this.outlineScope === "all") {
+    // A dense outline folds like a table of contents: every chapter stays listed and
+    // only the chapter being read shows its subheadings.
+    const folded = this.outlineScope === "all" && this.labelListDense;
+    if (this.outlineScope === "all" && !folded) {
       if (this.lastLabelBranchKey === "all") {
         return false;
       }
@@ -1299,9 +1369,10 @@ export class ReadingRailView {
       this.updateLabelRevealDelays();
       return true;
     }
+    const topLevel = this.topLevel;
     let branchStart = -1;
     for (let index = Math.min(this.activeHeadingIndex, this.entries.length - 1); index >= 0; index -= 1) {
-      if (this.entries[index]?.level === 2) {
+      if (this.entries[index]?.level === topLevel) {
         branchStart = index;
         break;
       }
@@ -1309,19 +1380,24 @@ export class ReadingRailView {
     let branchEnd = this.entries.length;
     if (branchStart >= 0) {
       for (let index = branchStart + 1; index < this.entries.length; index += 1) {
-        if (this.entries[index]?.level === 2) {
+        if (this.entries[index]?.level === topLevel) {
           branchEnd = index;
           break;
         }
       }
     }
-    const branchKey = `${branchStart}:${branchEnd}`;
+    const branchKey = `${folded ? "fold" : "branch"}:${branchStart}:${branchEnd}`;
     if (branchKey === this.lastLabelBranchKey) {
       return false;
     }
     this.lastLabelBranchKey = branchKey;
+    // Subheadings ahead of the first chapter have no chapter to fold into.
+    const firstChapter = this.entries.findIndex((entry) => entry.level === topLevel);
     this.labels.forEach((label, index) => {
-      label.hidden = branchStart < 0 || index < branchStart || index >= branchEnd;
+      const inBranch = branchStart >= 0 && index >= branchStart && index < branchEnd;
+      label.hidden = folded
+        ? !inBranch && this.entries[index]?.level !== topLevel && index > firstChapter
+        : !inBranch;
     });
     this.updateLabelRevealDelays();
     return true;
