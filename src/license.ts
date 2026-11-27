@@ -334,7 +334,7 @@ const CRISP_SIBLING_PLUGIN_IDS = [
 ] as const;
 
 interface VaultLike {
-  plugins?: { plugins?: Record<string, { settings?: Record<string, unknown>; data?: Record<string, unknown> } | undefined> };
+  plugins?: { plugins?: Record<string, { settings?: Record<string, unknown>; data?: Record<string, unknown>; options?: Record<string, unknown>; licenseKey?: unknown } | undefined> };
   vault?: {
     configDir?: string;
     adapter?: {
@@ -367,6 +367,8 @@ export async function discoverVaultCrispLicenses(
     add(p?.settings?.licenseKey);
     add(p?.data?.licenseCode);
     add(p?.data?.licenseKey);
+    add(p?.options?.licenseCode);
+    add(p?.licenseKey);
   }
   try {
     const adapter = app.vault?.adapter;
@@ -382,6 +384,9 @@ export async function discoverVaultCrispLicenses(
           try {
             const data = JSON.parse(await adapter.read(dataPath)) as Record<string, unknown> | null;
             add(data?.licenseCode || data?.licenseKey || data?.license);
+            // Crisp Pulse keeps its settings nested under `settings`.
+            const nested = data?.settings as Record<string, unknown> | undefined;
+            add(nested?.licenseCode || nested?.licenseKey);
           } catch {
             // a damaged data.json of another plugin is skipped
           }
